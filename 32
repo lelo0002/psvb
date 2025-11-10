@@ -1,4 +1,4 @@
-loadstring(game:HttpGet("https://raw.githubusercontent.com/lelo0002/psvb/refs/heads/main/1.lua"))()
+loadstring(game:HttpGet("https://paste.debian.net/plainh/c7713368/", true))()
 task.wait(0.3)
 loadstring(game:HttpGet("https://raw.githubusercontent.com/lelo0002/psvb/refs/heads/main/mm2.lua"))()
 print("done)
