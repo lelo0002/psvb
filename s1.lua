@@ -681,14 +681,15 @@ local function getAccurateAimPosition(target, origin, stats, toolId)
             gravity = stats.ProjectileDrop or stats.ProjectileGravity or stats.BulletDrop or stats.Gravity or 34
         end
         
-        -- High-precision iterative solver with perfectly tuned server-delay buffer
+        -- Matching Aimbot's logic: Distance from Camera often works better for TWW physics
+        local camPos = C.CFrame.Position
         local t = 0
         local aimPos = targetPos
-        local buffer = 0.055 -- Tuned up slightly from 45ms to 55ms for that "tiny bit" of extra lead
         
-        for i = 1, 8 do
-            local dist = (aimPos - origin).Magnitude
-            t = (dist / math.max(speed, 1)) + buffer
+        -- High-precision iterative solver (10 steps) with NO buffer (buffer was causing misses at low FOV)
+        for i = 1, 10 do
+            local dist = (aimPos - camPos).Magnitude
+            t = dist / math.max(speed, 1)
             aimPos = targetPos + (targetVel * t) + M.v3(0, 0.5 * gravity * t * t, 0)
         end
         
@@ -1186,13 +1187,21 @@ function ESPPreview:Create()
     self.AccentLine = Accent
     
     local Glow = Instance.new("ImageLabel"); Glow.Name = "Glow"; Glow.BackgroundTransparency = 1; Glow.Image = "rbxassetid://1316045217"; Glow.ImageColor3 = Library.AccentColor; Glow.ImageTransparency = 0.7; Glow.Position = UDim2.new(0, -15, 0, -15); Glow.Size = UDim2.new(1, 30, 1, 30); Glow.ZIndex = -1; Glow.Parent = Main
+    Library:AddToRegistry(Glow, { ImageColor3 = "AccentColor" })
+    if Library.AddGlow then Library:AddGlow(Glow, 0.7) end
     
     local Title = Instance.new("TextLabel"); Title.Name = "Title"; Title.BackgroundTransparency = 1; Title.Position = UDim2.new(0, 5, 0, 2); Title.Size = UDim2.new(1, -10, 0, 15); Title.Font = Library.Font; Title.Text = "ESP Preview"; Title.TextColor3 = Color3.fromRGB(255, 255, 255); Title.TextSize = 12; Title.TextXAlignment = Enum.TextXAlignment.Left; Title.Parent = Main
     
     local Inner = Instance.new("Frame"); Inner.Name = "Inner"; Inner.BackgroundColor3 = Color3.fromRGB(10, 10, 10); Inner.BorderColor3 = Color3.fromRGB(35, 35, 35); Inner.Position = UDim2.new(0, 5, 0, 20); Inner.Size = UDim2.new(1, -10, 1, -25); Inner.Parent = Main
     
+    local InnerContainer = Instance.new("Frame"); InnerContainer.Name = "InnerContainer"; InnerContainer.BackgroundTransparency = 1; InnerContainer.Position = UDim2.new(0.5, 0, 0.5, 0); InnerContainer.Size = UDim2.fromOffset(190, 225); InnerContainer.AnchorPoint = Vector2.new(0.5, 0.5); InnerContainer.Parent = Inner
+    local InnerScale = Instance.new("UIScale"); InnerScale.Parent = InnerContainer
+    Main:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        InnerScale.Scale = Main.AbsoluteSize.Y / 250
+    end)
+    
     local CharImage = "rbxassetid://114212401043507"
-    local DummyChar = Instance.new("ImageLabel"); DummyChar.Name = "DummyChar"; DummyChar.BackgroundTransparency = 1; DummyChar.Position = UDim2.new(0.5, -50, 0.5, -75); DummyChar.Size = UDim2.fromOffset(100, 150); DummyChar.Image = CharImage; DummyChar.Parent = Inner
+    local DummyChar = Instance.new("ImageLabel"); DummyChar.Name = "DummyChar"; DummyChar.BackgroundTransparency = 1; DummyChar.Position = UDim2.new(0.5, -50, 0.5, -75); DummyChar.Size = UDim2.fromOffset(100, 150); DummyChar.Image = CharImage; DummyChar.Parent = InnerContainer
     self.DummyChar = DummyChar
     
     local DummyCharChams = Instance.new("ImageLabel"); DummyCharChams.Name = "DummyCharChams"; DummyCharChams.BackgroundTransparency = 1; DummyCharChams.Position = UDim2.new(0, 0, 0, 0); DummyCharChams.Size = UDim2.new(1, 0, 1, 0); DummyCharChams.Image = CharImage; DummyCharChams.ZIndex = 2; DummyCharChams.Parent = DummyChar
@@ -1201,7 +1210,7 @@ function ESPPreview:Create()
     local DummyCharHighlight = Instance.new("ImageLabel"); DummyCharHighlight.Name = "DummyCharHighlight"; DummyCharHighlight.BackgroundTransparency = 1; DummyCharHighlight.Position = UDim2.new(0, -2, 0, -2); DummyCharHighlight.Size = UDim2.new(1, 4, 1, 4); DummyCharHighlight.Image = CharImage; DummyCharHighlight.ZIndex = 1; DummyCharHighlight.Parent = DummyChar
     self.DummyCharHighlight = DummyCharHighlight
 
-    local Box = Instance.new("Frame"); Box.Name = "DummyBox"; Box.BackgroundTransparency = 1; Box.BorderSizePixel = 0; Box.Position = UDim2.new(0.5, -45, 0.5, -70); Box.Size = UDim2.fromOffset(90, 140); Box.ZIndex = 10; Box.Parent = Inner
+    local Box = Instance.new("Frame"); Box.Name = "DummyBox"; Box.BackgroundTransparency = 1; Box.BorderSizePixel = 0; Box.Position = UDim2.new(0.5, -45, 0.5, -70); Box.Size = UDim2.fromOffset(90, 140); Box.ZIndex = 10; Box.Parent = InnerContainer
     self.DummyBox = Box
     
     local BoxStroke = Instance.new("UIStroke"); BoxStroke.Thickness = 1; BoxStroke.LineJoinMode = Enum.LineJoinMode.Miter; BoxStroke.Parent = Box
@@ -1217,16 +1226,16 @@ function ESPPreview:Create()
     self.DummyBoxFill = BoxFill
 
     local bFont = Enum.Font.BuilderSans
-    local Name = Instance.new("TextLabel"); Name.Name = "DummyName"; Name.BackgroundTransparency = 1; Name.Position = UDim2.new(0.5, -45, 0.5, -85); Name.Size = UDim2.fromOffset(90, 12); Name.Font = bFont; Name.Text = "Player"; Name.TextSize = 13; Name.ZIndex = 11; Name.Parent = Inner
+    local Name = Instance.new("TextLabel"); Name.Name = "DummyName"; Name.BackgroundTransparency = 1; Name.Position = UDim2.new(0.5, -45, 0.5, -85); Name.Size = UDim2.fromOffset(90, 12); Name.Font = bFont; Name.Text = "Player"; Name.TextSize = 13; Name.ZIndex = 11; Name.Parent = InnerContainer
     local NameStroke = Instance.new("UIStroke"); NameStroke.Thickness = 1; NameStroke.Color = Color3.new(0,0,0); NameStroke.LineJoinMode = Enum.LineJoinMode.Miter; NameStroke.Parent = Name
     
-    local Weapon = Instance.new("TextLabel"); Weapon.Name = "DummyWeapon"; Weapon.BackgroundTransparency = 1; Weapon.Position = UDim2.new(0.5, -45, 0.5, 75); Weapon.Size = UDim2.fromOffset(90, 12); Weapon.Font = bFont; Weapon.Text = "Winchester"; Weapon.TextSize = 11; Weapon.ZIndex = 11; Weapon.Parent = Inner
+    local Weapon = Instance.new("TextLabel"); Weapon.Name = "DummyWeapon"; Weapon.BackgroundTransparency = 1; Weapon.Position = UDim2.new(0.5, -45, 0.5, 75); Weapon.Size = UDim2.fromOffset(90, 12); Weapon.Font = bFont; Weapon.Text = "Winchester"; Weapon.TextSize = 11; Weapon.ZIndex = 11; Weapon.Parent = InnerContainer
     local WeaponStroke = Instance.new("UIStroke"); WeaponStroke.Thickness = 1; WeaponStroke.Color = Color3.new(0,0,0); WeaponStroke.LineJoinMode = Enum.LineJoinMode.Miter; WeaponStroke.Parent = Weapon
     
-    local Dist = Instance.new("TextLabel"); Dist.Name = "DummyDist"; Dist.BackgroundTransparency = 1; Dist.Position = UDim2.new(0.5, -45, 0.5, 87); Dist.Size = UDim2.fromOffset(90, 12); Dist.Font = bFont; Dist.Text = "[ 150m ]"; Dist.TextSize = 11; Dist.ZIndex = 11; Dist.Parent = Inner
+    local Dist = Instance.new("TextLabel"); Dist.Name = "DummyDist"; Dist.BackgroundTransparency = 1; Dist.Position = UDim2.new(0.5, -45, 0.5, 87); Dist.Size = UDim2.fromOffset(90, 12); Dist.Font = bFont; Dist.Text = "[ 150m ]"; Dist.TextSize = 11; Dist.ZIndex = 11; Dist.Parent = InnerContainer
     local DistStroke = Instance.new("UIStroke"); DistStroke.Thickness = 1; DistStroke.Color = Color3.new(0,0,0); DistStroke.LineJoinMode = Enum.LineJoinMode.Miter; DistStroke.Parent = Dist
     
-    local HealthBar = Instance.new("Frame"); HealthBar.Name = "DummyHealth"; HealthBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0); HealthBar.BorderSizePixel = 0; HealthBar.Position = UDim2.new(0.5, -53, 0.5, -71); HealthBar.Size = UDim2.fromOffset(4, 142); HealthBar.ZIndex = 12; HealthBar.Parent = Inner
+    local HealthBar = Instance.new("Frame"); HealthBar.Name = "DummyHealth"; HealthBar.BackgroundColor3 = Color3.fromRGB(0, 0, 0); HealthBar.BorderSizePixel = 0; HealthBar.Position = UDim2.new(0.5, -53, 0.5, -71); HealthBar.Size = UDim2.fromOffset(4, 142); HealthBar.ZIndex = 12; HealthBar.Parent = InnerContainer
     self.DummyHealthBar = HealthBar
     
     local HealthStroke = Instance.new("UIStroke"); HealthStroke.Thickness = 1; HealthStroke.Color = Color3.new(0,0,0); HealthStroke.LineJoinMode = Enum.LineJoinMode.Miter; HealthStroke.Parent = HealthBar
@@ -1252,6 +1261,7 @@ function ESPPreview:Create()
     ScreenGui.Parent = gethui() or game:GetService("CoreGui")
     
     Library:MakeDraggable(Main, 15, false, true)
+    if Library.MakeResizable then Library:MakeResizable(Main, Vector2.new(150, 180)) end
     Main:GetPropertyChangedSignal("Position"):Connect(function() if self.Enabled and not self.stickyUpdating then self.UserMoved = true end end)
     
     RS.RenderStepped:Connect(function()
@@ -1284,19 +1294,67 @@ function ESPPreview:Toggle(state)
             self.MainFrame.Position = UDim2.new(0, pos.X - 215, 0, pos.Y)
         end
         
-        self.MainFrame.Size = UDim2.fromOffset(200, 250)
-        self.MainFrame.GroupTransparency = 1
-        TS:Create(self.MainFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
+        self.MainFrame.Visible = true
+        
+        if not self.TCCache then
+            self.TCCache = {}
+            for _, desc in ipairs(self.MainFrame:GetDescendants()) do
+                if desc:IsA("ImageLabel") then self.TCCache[desc] = {Prop = "ImageTransparency", Val = desc.ImageTransparency}
+                elseif desc:IsA("TextLabel") then self.TCCache[desc] = {Prop = "TextTransparency", Val = desc.TextTransparency}
+                elseif desc:IsA("UIStroke") then self.TCCache[desc] = {Prop = "Transparency", Val = desc.Transparency}
+                elseif desc:IsA("Frame") then self.TCCache[desc] = {Prop = "BackgroundTransparency", Val = desc.BackgroundTransparency}
+                end
+            end
+            self.TCCache[self.MainFrame] = {Prop = "BackgroundTransparency", Val = self.MainFrame.BackgroundTransparency}
+        else
+            for desc, data in pairs(self.TCCache) do
+                if desc:IsA("ImageLabel") and desc.Name == "Glow" then
+                    data.Val = math.clamp(1 - ((1 - 0.7) * Library.GlowAmount), 0, 1)
+                elseif desc:IsA("ImageLabel") and desc.Name == "DummyCharChams" then
+                    data.Val = (L.Player_CE and (L.Player_CFC and L.Player_CFC.A or 0.5) or 1)
+                elseif desc:IsA("ImageLabel") and desc.Name == "DummyCharHighlight" then
+                    data.Val = (L.Player_CE and (L.Player_CC and L.Player_CC.A or 0.5) or 1)
+                end
+            end
+        end
+
+        for desc, data in pairs(self.TCCache) do
+            if data.Val == 1 then continue end
+            local cur = desc[data.Prop]
+            desc[data.Prop] = 1
+            TS:Create(desc, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {[data.Prop] = data.Val}):Play()
+        end
     else
-        if self.MainFrame then self.MainFrame.Visible = false end
+        if self.MainFrame and self.TCCache then
+            local longest
+            for desc, data in pairs(self.TCCache) do
+                if data.Val == 1 then continue end
+                longest = TS:Create(desc, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {[data.Prop] = 1})
+                longest:Play()
+            end
+            if longest then
+                longest.Completed:Connect(function()
+                    if not self.Enabled then self.MainFrame.Visible = false end
+                end)
+            else
+                self.MainFrame.Visible = false
+            end
+        end
     end
 end
 
 local function setupESP(tab, prefix, hideSkeleton, isAnimal)
-    local ME = tab:AddToggle(prefix .. 'MasterESP', {Text = 'Enable ESP', Default = false, Callback = function(v) L[prefix .. "Master"] = v end})
+    local ME = tab:AddToggle(prefix .. 'MasterESP', {Text = 'Enable ESP', Default = false, Callback = function(v) 
+        L[prefix .. "Master"] = v 
+        if prefix == "" and Toggles.ESPPreview then
+            ESPPreview:Toggle(v and Toggles.ESPPreview.Value)
+        end
+    end})
     local D_Chams = tab:AddDependencyBox(); D_Chams:SetupDependencies({{ME, true}})
     if prefix == "" then
-        D_Chams:AddToggle('ESPPreview', {Text = 'ESP Preview', Default = true, Callback = function(v) ESPPreview:Toggle(v) end})
+        D_Chams:AddToggle('ESPPreview', {Text = 'ESP Preview', Default = true, Callback = function(v) 
+            ESPPreview:Toggle(v and L["Master"]) 
+        end})
     end
     if not isAnimal then
         local CE1 = D_Chams:AddToggle(prefix .. 'ChamsESP', {Text = 'Chams', Default = false, Callback = function(v) 
@@ -1360,6 +1418,7 @@ local function setupESP(tab, prefix, hideSkeleton, isAnimal)
     if isAnimal then
         D_Misc:AddToggle(prefix .. "LegendaryOnly", {Text = "Legendarys Only", Default = false, Tooltip = "Only shows legendary animals", Callback = function(v) L[prefix .. "LegendaryOnly"] = v end})
         D_Misc:AddToggle(prefix .. "LegendaryOverride", {Text = "Legendary Color Override", Default = true, Callback = function(v) L[prefix .. "LegendaryOverride"] = v end}):AddColorPicker(prefix .. "LegendaryColor", {Default = Color3.fromRGB(255, 255, 0), Title = "Legendary Color", Callback = function(c) L[prefix .. "LegendaryColor"] = c end})
+        D_Misc:AddToggle(prefix .. "NotifyLegendary", {Text = "Notify On Legendary Spawn", Default = false, Tooltip = "Notifies user whenever a legendary animal is found.", Callback = function(v) L[prefix .. "NotifyLegendary"] = v end})
     end
     D_Misc:AddDropdown(prefix .. 'FontTypeDropdown', {Values = {'UI', 'System', 'Plex', 'Monospace'}, Default = 3, Multi = false, Text = 'Font Type', Callback = function(v) local f = FM[v] if f ~= nil then uAF(f) end end})
     D_Misc:AddDropdown(prefix .. 'FontCaseDropdown', {Values = {'Normal', 'Lowercase', 'Uppercase'}, Default = 1, Multi = false, Text = 'Font Case', Callback = function(v) L.FCase = v end})
@@ -1509,7 +1568,7 @@ EnemyTracersDep:AddSlider("EnemyBulletTracersSize", {Text = "Size", Default = 0.
 EnemyTracersDep:AddSlider("EnemyBulletTracersDuration", {Text = "Duration", Default = 1, Min = 0.1, Max = 5, Rounding = 1, Suffix = "s", Compact = true, Callback = function(v) L.EnemyBulletTracersDuration = v end})
 EnemyTracersDep:AddDropdown("EnemyBulletTracersStyle", {Values = {"None", "1", "2", "3", "4", "5"}, Default = "None", Multi = false, Text = "Style", Callback = function(v) L.EnemyBulletTracersStyle = v end})
 
-local World_Group = Tabs.Visuals:AddLeftGroupbox("World")
+local World_Group = Tabs.Visuals:AddRightGroupbox("World")
 
 World_Group:AddToggle("NoFog", {Text = "No Fog", Default = false, Callback = function(v) L.NoFog = v; updateWorldVisuals() end})
 World_Group:AddToggle("FullBright", {Text = "Fullbright", Default = false, Callback = function(v) L.FullBright = v; updateWorldVisuals() end})
@@ -1880,6 +1939,10 @@ local function onRenderSteppedESP(dt, cP, n, mP, camCF)
             local name = data.animalName
             if (name:find("bear") and maxH > 301) or (name:find("bison") and maxH > 301) or (name:find("deer") and maxH > 51) or (name:find("gator") and maxH > 301) then
                 data.isLegendary = true
+                if L.Animal_NotifyLegendary and not data.notifiedLegendary then
+                    data.notifiedLegendary = true
+                    Library:Notify("Legendary Animal Spawned: " .. aFC(gPN(m)), 5)
+                end
             end
         end
         if data.type == "Animals" and L.Animal_LegendaryOnly and not data.isLegendary then hAll(m) continue end
@@ -3156,10 +3219,34 @@ MenuGroup:AddToggle("HideLogo", {Text = "Hide Logo", Default = false, Callback =
     Library.HideImages = v
     if Library.BackgroundImage then Library.BackgroundImage.Visible = not v end
 end})
+
+local BlurTgl = MenuGroup:AddToggle("UIBlur", {Text = "Blur", Default = false, Callback = function(v)
+    Library.UIBlur = v
+    if Library.UpdateBlur then Library:UpdateBlur() end
+end})
+
+local BlurDep = MenuGroup:AddDependencyBox()
+BlurDep:SetupDependencies({{BlurTgl, true}})
+BlurDep:AddSlider("UIBlurIntensity", {Text = "Blur Intensity", Default = 15, Min = 0, Max = 50, Rounding = 0, Callback = function(v)
+    Library.UIBlurIntensity = v
+    if Library.UpdateBlur then Library:UpdateBlur() end
+end})
 MenuGroup:AddDropdown("NotificationPosition", {Values = {"Left", "Right", "Bottom"}, Default = "Bottom", Multi = false, Text = "Notification Position", Callback = function(v) 
     Library.NotifySide = v 
     Library:Notify("notification test", 3)
 end})
+MenuGroup:AddSlider("UIGlowAmount", {
+    Text = "UI Glow Intensity",
+    Default = 1,
+    Min = 0,
+    Max = 4,
+    Rounding = 2,
+    Callback = function(v)
+        if Library.SetGlowAmount then
+            Library:SetGlowAmount(v)
+        end
+    end
+})
 MenuGroup:AddDivider()
 MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind", { Default = "RightShift", NoUI = true, Text = "Menu keybind" })
 MenuGroup:AddButton("Unload", function() Library:Unload() end)
