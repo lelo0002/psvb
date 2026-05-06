@@ -17,6 +17,58 @@ local P, RS, TS, WS = S.Players, S.RunService, S.TweenService, workspace
 local C = workspace.CurrentCamera
 while not P.LocalPlayer do task.wait() end
 local LP = P.LocalPlayer
+print("roxy.win | LocalPlayer found: " .. LP.Name)
+
+local function checkCharData()
+    local root = WS:FindFirstChild("WORKSPACE_Entities")
+    local folder = root and root:FindFirstChild("Players")
+    local char = folder and folder:FindFirstChild(LP.Name) or LP.Character
+    return char and char:FindFirstChild("HumanoidRootPart") ~= nil
+end
+
+local isLoaded = checkCharData()
+if not isLoaded then
+    local NotifyData = Library:Notify("roxy.win | synchronizing with world data... 00.0%", 15)
+    local startTime = os.clock()
+    local duration = 5.5
+    local promptedSpawn = false
+
+    while true do
+        local currentlyLoaded = checkCharData()
+        local elapsed = os.clock() - startTime
+        local targetPercent = math.min(99.9, (elapsed / duration) * 100)
+        
+        if currentlyLoaded and targetPercent >= 99.9 then
+            targetPercent = 100.0
+        end
+        
+        if targetPercent >= 99.9 and not currentlyLoaded then
+            targetPercent = 99.9
+            if not promptedSpawn then
+                promptedSpawn = true
+                Library:Notify("roxy.win | deployment paused. please spawn character to continue.", 10)
+            end
+        end
+        
+        if NotifyData and NotifyData.ChangeDescription then
+            -- %04.1f ensures 00.0 to 99.9 have the exact same string length, preventing UI width jitter
+            NotifyData:ChangeDescription(string.format("roxy.win | synchronizing with world data... %04.1f%%", targetPercent))
+        end
+        
+        if targetPercent >= 100.0 then
+            break
+        end
+        
+        task.wait() 
+    end
+
+    if NotifyData and NotifyData.ChangeDescription then
+        NotifyData:ChangeDescription("roxy.win | synchronizing with world data... 100.0%")
+    end
+    task.wait(0.2)
+    Library:Notify("roxy.win | initializing modules.", 3)
+end
+print("roxy.win | World sync complete.")
 local espCache, SA_State = {}, { Transparency = 0, LerpPos = nil, CurrentTarget = nil, SmoothedFOV = 130 }
 local Aim_State = { Transparency = 0, LerpPos = nil, CurrentTarget = nil, SmoothedFOV = 130 }
 local crosshairLines = {}
@@ -29,6 +81,28 @@ for i = 1, 8 do
     l.Transparency = 1
     crosshairLines[i] = l
 end
+
+local MBF_RingLines = {}
+local MBF_RingOutlineLines = {}
+for i = 1, 73 do
+    local l = Drawing.new("Line")
+    l.Visible = false
+    l.Thickness = 1
+    l.Transparency = 1
+    l.Color = Color3.new(1, 1, 1)
+    l.ZIndex = 2
+    MBF_RingLines[i] = l
+    
+    local o = Drawing.new("Line")
+    o.Visible = false
+    o.Thickness = 2 -- Outline slightly thicker for visibility
+    o.Transparency = 1
+    o.Color = Color3.new(0, 0, 0)
+    o.ZIndex = 1
+    MBF_RingOutlineLines[i] = o
+end
+local MBF_CurrentPos = Vector3.new(0, 0, 0)
+
 Library:SetWatermarkVisibility(true)
 local FrameTimer, FrameCounter, FPS = tick(), 0, 60
 local GetPing = function() 
@@ -237,16 +311,36 @@ local L = {
     DI_LegendaryOverride = true, DI_LegendaryColor = Color3.fromRGB(255, 255, 0), DI_Font = 2, DI_FontCase = "Normal", DI_FontSize = 13, DI_MaxDistance = 10000,
     DI_Labels = {}, DI_Cache = {},
     TS_Enabled = false, TS_Name = false, TS_NameColor = Color3.fromRGB(255, 0, 0), TS_Distance = false, TS_DistanceColor = Color3.fromRGB(255, 255, 255), TS_Measuring = "Studs", TS_Sort = {Tree = true, Cactus = true}, TS_Notify = false, TS_Font = 2, TS_FontCase = "Normal", TS_FontSize = 13, TS_MaxDistance = 10000, TS_Cache = {},
-    SpeedEnabled = false, SpeedAmount = 25, FlyEnabled = false, FlySpeed = 50, NoJumpDelay = false, NoRagdoll = false, InfStamina = false, KickerDoorFaster = false, EmotePackEnabled = false, ClapSpeedMultiplier = false, ClapSpeedAmount = 3, RollSpeedModifier = false, RollSpeedAmount = 1,
+    SpeedEnabled = false, SpeedAmount = 25, FlyEnabled = false, FlySpeed = 50, NoJumpDelay = false, NoRagdoll = false, InfStamina = false, NoFallDamage = false, AutoGetUp = false, AutoBreakFree = false, EmotePackEnabled = false, ClapSpeedMultiplier = false, ClapSpeedAmount = 3, RollSpeedModifier = false, RollSpeedAmount = 1.25,
     BulletTracers = false, BulletTracersColor = Color3.fromRGB(136, 159, 255), BulletTracersColor2 = Color3.fromRGB(255, 255, 255), BulletTracersSize = 0.2, BulletTracersDuration = 1, BulletTracersStyle = "None",
     EnemyBulletTracers = false, EnemyBulletTracersColor = Color3.fromRGB(118, 52, 52), EnemyBulletTracersColor2 = Color3.fromRGB(255, 255, 255), EnemyBulletTracersSize = 0.2, EnemyBulletTracersDuration = 1, EnemyBulletTracersStyle = "None",
-    NoFog = false, FullBright = false, AtmosphereOverride = false, ColorCorrectionOverride = false, BloomOverride = false, TimeOfDayEnabled = false, AmbientOverride = false
+    NoFog = false, FullBright = false, AtmosphereOverride = false, ColorCorrectionOverride = false, BloomOverride = false, TimeOfDayEnabled = false, AmbientOverride = false,
+    MBF_Enabled = false, MBF_Radius = 25, MBF_ShowRadius = false, MBF_RadiusColor = Color3.fromRGB(255, 255, 255), MBF_Status = "Inactive"
 }
 local UIS = game:GetService("UserInputService")
 local O = { Stamina = {}, Kick = {}, Roll = {}, Stats = {} }
 local State = { esp = {}, SA = { Transparency = 0, LerpPos = nil, CurrentTarget = nil, SmoothedFOV = 130 }, Aim = { Transparency = 0, LerpPos = nil, CurrentTarget = nil, SmoothedFOV = 130 }, crossLines = {}, circlePts = {} }
 local Global, Network = nil, nil
 pcall(function() Global = require(game:GetService("ReplicatedStorage").SharedModules.Global); Network = Global.Network end)
+local Modules = {}
+pcall(function()
+    if Global and Global.LoadModule then
+        local loadModule = Global.LoadModule
+        Modules.Network = Global.Network
+        Modules.plrCharacter = loadModule("PlayerCharacter")
+        Modules.repState = loadModule("ReplicatedState")
+    end
+end)
+
+local function wwguard(p270, p271)
+    return function(...)
+        local success, v272 = pcall(debug.getconstants, 2)
+        if success and not table.find(v272, "StackSize") then
+            return p271(...)
+        end
+        return p270(...)
+    end
+end
 local UI = {
     fovO = Drawing.new("Circle"), fov = Drawing.new("Circle"), fovL = {}, fovOL = {},
     aimFovO = Drawing.new("Circle"), aimFov = Drawing.new("Circle"), aimFovL = {}, aimFovOL = {},
@@ -327,7 +421,10 @@ local function getTargetPart(ent, mode)
         
         if data and data["targetPart_"..mode] and data["targetPart_"..mode].Parent and data["lastTargetSetting_"..mode] == pName then
             if pName ~= "Random" then
-                return data["targetPart_"..mode]
+                local cachedName = data["targetPart_"..mode].Name
+                if cachedName == pName or (pName == "Torso" and (cachedName == "UpperTorso" or cachedName == "LowerTorso")) then
+                    return data["targetPart_"..mode]
+                end
             elseif data["lastRandomUpdate_"..mode] and (now - data["lastRandomUpdate_"..mode]) < 0.1 then
                 return data["targetPart_"..mode]
             end
@@ -375,7 +472,54 @@ local function isVisible(part, origin)
     local res = WS:Raycast(origin, part.Position - origin, params)
     return res == nil
 end
+local ProjectileHandlerHooked = false
+local ProjectileHandlerHooked = false
 local function updateGunMods()
+    if not ProjectileHandlerHooked then
+        pcall(function()
+            local projHandler = game:GetService("ReplicatedStorage"):FindFirstChild('ProjectileHandler', true)
+            if projHandler then
+                local env = getsenv(projHandler)
+                local oldRaycast = env.Raycast
+                if oldRaycast then
+                    env.Raycast = function(...)
+                        local args = {...}
+                        local self = args[1]
+                        if L.GM_InfWallbang and type(self) == "table" and self.IsOwner then
+                            local ignore = args[4]
+                            local geometryFolders = {
+                                workspace.Terrain,
+                                workspace:FindFirstChild("WORKSPACE_Geometry"),
+                                workspace:FindFirstChild("WORKSPACE_Interactables"),
+                                workspace:FindFirstChild("Ignore"),
+                                workspace:FindFirstChild("WORKSPACE_Debris")
+                            }
+                            
+                            if type(ignore) == "table" then
+                                for _, folder in ipairs(geometryFolders) do
+                                    if folder and not table.find(ignore, folder) then
+                                        table.insert(ignore, folder)
+                                    end
+                                end
+                            elseif typeof(ignore) == "RaycastParams" then
+                                local list = ignore.FilterDescendantsInstances
+                                local changed = false
+                                for _, folder in ipairs(geometryFolders) do
+                                    if folder and not table.find(list, folder) then
+                                        table.insert(list, folder)
+                                        changed = true
+                                    end
+                                end
+                                if changed then ignore.FilterDescendantsInstances = list end
+                            end
+                        end
+                        return oldRaycast(unpack(args))
+                    end
+                    ProjectileHandlerHooked = true
+                end
+            end
+        end)
+    end
     local success, Global = pcall(function() return require(game:GetService("ReplicatedStorage").SharedModules.Global) end)
     if not success or not Global or not Global.SharedData then return end
     local PlayerItems = Global.SharedData.PlayerItems
@@ -463,7 +607,7 @@ local function updateGunMods()
                 data.LoadStartSpeed = (L.GM_ReloadSpeedModifier and not L.GM_InstantReload) and (orig.LoadStartSpeed or 1) * L.GM_ReloadSpeedAmount or orig.LoadStartSpeed
             end
             if orig.ProjectilePenetration ~= nil then
-                data.ProjectilePenetration = L.GM_InfWallbang and 100 or orig.ProjectilePenetration
+                data.ProjectilePenetration = L.GM_InfWallbang and 9e9 or orig.ProjectilePenetration
             end
             if orig.CanBeHipFired ~= nil then
                 data.CanBeHipFired = L.GM_NoScope and true or orig.CanBeHipFired
@@ -523,30 +667,41 @@ local function updateWorldVisuals()
     
     if L.NoFog then
         if not worldOriginals.Fog then worldOriginals.Fog = {End = lighting.FogEnd, Start = lighting.FogStart} end
-        lighting.FogEnd = 100000; lighting.FogStart = 0
+        if lighting.FogEnd ~= 100000 then lighting.FogEnd = 100000 end
+        if lighting.FogStart ~= 0 then lighting.FogStart = 0 end
         local atmosphere = lighting:FindFirstChildOfClass("Atmosphere")
         if atmosphere then
             if not worldOriginals.AtmosphereDensity then worldOriginals.AtmosphereDensity = atmosphere.Density end
-            atmosphere.Density = 0
+            if atmosphere.Density ~= 0 then atmosphere.Density = 0 end
         end
     else
-        if worldOriginals.Fog then lighting.FogEnd = worldOriginals.Fog.End; lighting.FogStart = worldOriginals.Fog.Start; worldOriginals.Fog = nil end
+        if worldOriginals.Fog then 
+            lighting.FogEnd = worldOriginals.Fog.End; lighting.FogStart = worldOriginals.Fog.Start; worldOriginals.Fog = nil 
+        end
         local atmosphere = lighting:FindFirstChildOfClass("Atmosphere")
-        if atmosphere and worldOriginals.AtmosphereDensity then atmosphere.Density = worldOriginals.AtmosphereDensity; worldOriginals.AtmosphereDensity = nil end
+        if atmosphere and worldOriginals.AtmosphereDensity then 
+            atmosphere.Density = worldOriginals.AtmosphereDensity; worldOriginals.AtmosphereDensity = nil 
+        end
     end
 
     if L.FullBright then
         if not worldOriginals.Bright then worldOriginals.Bright = {Ambient = lighting.Ambient, OutdoorAmbient = lighting.OutdoorAmbient, Brightness = lighting.Brightness} end
-        lighting.Ambient = Color3.new(1, 1, 1); lighting.OutdoorAmbient = Color3.new(1, 1, 1); lighting.Brightness = 2
+        local white = Color3.new(1, 1, 1)
+        if lighting.Ambient ~= white then lighting.Ambient = white end
+        if lighting.OutdoorAmbient ~= white then lighting.OutdoorAmbient = white end
+        if lighting.Brightness ~= 2 then lighting.Brightness = 2 end
     else
-        if worldOriginals.Bright then lighting.Ambient = worldOriginals.Bright.Ambient; lighting.OutdoorAmbient = worldOriginals.Bright.OutdoorAmbient; lighting.Brightness = worldOriginals.Bright.Brightness; worldOriginals.Bright = nil end
+        if worldOriginals.Bright then 
+            lighting.Ambient = worldOriginals.Bright.Ambient; lighting.OutdoorAmbient = worldOriginals.Bright.OutdoorAmbient; lighting.Brightness = worldOriginals.Bright.Brightness; worldOriginals.Bright = nil 
+        end
     end
 
     if L.AtmosphereOverride then
         local atm = lighting:FindFirstChildOfClass("Atmosphere")
         if atm then
             if not worldOriginals.AtmosphereColor then worldOriginals.AtmosphereColor = atm.Color end
-            atm.Color = Options.AtmosphereColor.Value
+            local target = Options.AtmosphereColor.Value
+            if atm.Color ~= target then atm.Color = target end
         end
     end
 
@@ -554,7 +709,8 @@ local function updateWorldVisuals()
         local cc = lighting:FindFirstChildOfClass("ColorCorrectionEffect")
         if cc then
             if not worldOriginals.ColorCorrectionTintColor then worldOriginals.ColorCorrectionTintColor = cc.TintColor end
-            cc.TintColor = Options.ColorCorrectionColor.Value
+            local target = Options.ColorCorrectionColor.Value
+            if cc.TintColor ~= target then cc.TintColor = target end
         end
     end
 
@@ -562,10 +718,16 @@ local function updateWorldVisuals()
         local bloom = lighting:FindFirstChildOfClass("BloomEffect")
         if bloom then
             if not worldOriginals.Bloom then worldOriginals.Bloom = {Intensity = bloom.Intensity, Threshold = bloom.Threshold, Size = bloom.Size} end
-            bloom.Intensity = Options.BloomIntensity.Value; bloom.Threshold = Options.BloomThreshold.Value; bloom.Size = Options.BloomSize.Value
+            local i, t, s = Options.BloomIntensity.Value, Options.BloomThreshold.Value, Options.BloomSize.Value
+            if bloom.Intensity ~= i then bloom.Intensity = i end
+            if bloom.Threshold ~= t then bloom.Threshold = t end
+            if bloom.Size ~= s then bloom.Size = s end
         end
         local tint = lighting:FindFirstChild("ROXY_BloomTint") or Instance.new("ColorCorrectionEffect", lighting)
-        tint.Name = "ROXY_BloomTint"; tint.TintColor = Options.BloomColor.Value; tint.Enabled = true
+        tint.Name = "ROXY_BloomTint"
+        local target = Options.BloomColor.Value
+        if tint.TintColor ~= target then tint.TintColor = target end
+        if not tint.Enabled then tint.Enabled = true end
     else
         local tint = lighting:FindFirstChild("ROXY_BloomTint")
         if tint then tint:Destroy() end
@@ -573,21 +735,27 @@ local function updateWorldVisuals()
 
     if L.TimeOfDayEnabled then
         if not worldOriginals.ClockTime then worldOriginals.ClockTime = lighting.ClockTime end
-        lighting.ClockTime = Options.WorldClockTime.Value
+        local target = Options.WorldClockTime.Value
+        if lighting.ClockTime ~= target then lighting.ClockTime = target end
     end
 
     if L.AmbientOverride then
         if not worldOriginals.Ambient then worldOriginals.Ambient = lighting.Ambient end
         if not worldOriginals.OutdoorAmbient then worldOriginals.OutdoorAmbient = lighting.OutdoorAmbient end
-        lighting.Ambient = Options.AmbientColor.Value; lighting.OutdoorAmbient = Options.OutdoorAmbientColor.Value
+        local aC, oC = Options.AmbientColor.Value, Options.OutdoorAmbientColor.Value
+        if lighting.Ambient ~= aC then lighting.Ambient = aC end
+        if lighting.OutdoorAmbient ~= oC then lighting.OutdoorAmbient = oC end
     end
     
     updatingWorld = false
 end
 
-S.Lighting.Changed:Connect(function(prop)
-    if (L.NoFog and (prop == "FogEnd" or prop == "FogStart")) or (L.FullBright and (prop == "Ambient" or prop == "OutdoorAmbient" or prop == "Brightness")) or (L.TimeOfDayEnabled and prop == "ClockTime") or (L.AmbientOverride and (prop == "Ambient" or prop == "OutdoorAmbient")) or (L.ColorCorrectionOverride and prop == "TintColor") or (L.BloomOverride and (prop == "Intensity" or prop == "Threshold" or prop == "Size")) then
-        updateWorldVisuals()
+task.spawn(function()
+    while task.wait(1) do
+        if Library.Unloaded then break end
+        if L.NoFog or L.FullBright or L.TimeOfDayEnabled or L.AmbientOverride or L.ColorCorrectionOverride or L.BloomOverride then
+            updateWorldVisuals()
+        end
     end
 end)
 local WeaponProfiles = {
@@ -681,19 +849,26 @@ local function getAccurateAimPosition(target, origin, stats, toolId)
             gravity = stats.ProjectileDrop or stats.ProjectileGravity or stats.BulletDrop or stats.Gravity or 34
         end
         
-        -- Matching Aimbot's logic: Distance from Camera often works better for TWW physics
-        local camPos = C.CFrame.Position
-        local t = 0
+        local function SolveTime(p1, s, p2, grav)
+            local diff = p2 - p1
+            local horiz = M.v3(diff.X, 0, diff.Z)
+            local t2 = horiz.Magnitude / math.max(s, 1)
+            if t2 == 0 then t2 = 0.001 end
+            local vY = (diff.Y + 0.5 * math.abs(grav) * t2 * t2) / t2
+            local vHoriz = horiz.Unit * s
+            return M.v3(vHoriz.X, vY, vHoriz.Z), t2
+        end
+
         local aimPos = targetPos
+        local reqVel = M.v3(0, 0, 0)
+        local t = 0
         
-        -- High-precision iterative solver (10 steps) with NO buffer (buffer was causing misses at low FOV)
-        for i = 1, 10 do
-            local dist = (aimPos - camPos).Magnitude
-            t = dist / math.max(speed, 1)
-            aimPos = targetPos + (targetVel * t) + M.v3(0, 0.5 * gravity * t * t, 0)
+        for i = 1, 5 do
+            aimPos = targetPos + (targetVel * t)
+            reqVel, t = SolveTime(origin, speed, aimPos, gravity)
         end
         
-        return aimPos, t
+        return origin + reqVel, t
     end)
     
     if success and res then
@@ -727,105 +902,20 @@ end
 local function getClosestPlayerToMouse()
     return SA_State.CurrentTarget
 end
-local function handleBacktrack(func, returnCount, self, ...)
-    if not L.SA_Backtrack or not L.ActiveShots or #L.ActiveShots == 0 then return func(self, ...) end
-    local now = M.clock()
-    for i = #L.ActiveShots, 1, -1 do
-        local shot = L.ActiveShots[i]
-        if now - shot.Time > shot.MaxTime then M.remove(L.ActiveShots, i) end
-    end
-    if #L.ActiveShots == 0 then return func(self, ...) end
-    local args = {...}
-    local rayOrigin, rayDir
-    if typeof(args[1]) == "Ray" then
-        local r = args[1]
-        rayOrigin, rayDir = r.Origin, r.Direction
-    elseif typeof(args[1]) == "Vector3" and typeof(args[2]) == "Vector3" then
-        rayOrigin, rayDir = args[1], args[2]
-    end
-    if not rayOrigin or not rayDir then return func(self, ...) end
-    local function getDistanceAndClosestPointToSegment(origin, direction, point)
-        local v = point - origin
-        local d = direction.Unit
-        local t = v:Dot(d)
-        local closestPoint
-        if t < 0 then closestPoint = origin
-        elseif t > direction.Magnitude then closestPoint = origin + direction
-        else closestPoint = origin + d * t end
-        return (point - closestPoint).Magnitude, closestPoint
-    end
-    for _, shot in ipairs(L.ActiveShots) do
-        local target = shot.Target
-        if target and target.Parent then
-            local mainPart = shot.TargetPart or target:FindFirstChild("HumanoidRootPart") or target:FindFirstChild("Torso") or target:FindFirstChild("Head")
-            if mainPart and shot.PartCFrames[mainPart] then
-                local dist, closestPoint = getDistanceAndClosestPointToSegment(rayOrigin, rayDir, shot.PartCFrames[mainPart].Position)
-                if dist < 25 then
-                    local offset = closestPoint - shot.PartCFrames[mainPart].Position
-                    local originalCFrames = {}
-                    for part, pastCF in pairs(shot.PartCFrames) do 
-                        if part.Parent and part:IsA("BasePart") then 
-                            originalCFrames[part] = part.CFrame
-                            part.CFrame = pastCF + offset
-                        end 
-                    end
-                    local result
-                    if returnCount == 1 then
-                        result = func(self, ...)
-                    else
-                        local a, b, c, d = func(self, ...)
-                        result = {a, b, c, d}
-                    end
-                    task.defer(function()
-                        for part, cf in pairs(originalCFrames) do 
-                            if part and part.Parent then part.CFrame = cf end 
-                        end
-                    end)
-                    if returnCount == 1 then
-                        return result
-                    else
-                        return result[1], result[2], result[3], result[4]
-                    end
-                end
-            end
-        end
-    end
-    return func(self, ...)
-end
-local oldRaycast
-oldRaycast = hookfunction(workspace.Raycast, function(self, ...)
-    if L.SA_Enabled and L.SA_Backtrack and #L.ActiveShots > 0 then
-        return handleBacktrack(oldRaycast, 1, self, ...)
-    end
-    return oldRaycast(self, ...)
-end)
-local oldFNI
-oldFNI = hookfunction(workspace.FindPartOnRayWithIgnoreList, function(self, ...)
-    if L.SA_Enabled and L.SA_Backtrack and #L.ActiveShots > 0 then
-        return handleBacktrack(oldFNI, 4, self, ...)
-    end
-    return oldFNI(self, ...)
-end)
-local oldFNP
-oldFNP = hookfunction(workspace.FindPartOnRay, function(self, ...)
-    if L.SA_Enabled and L.SA_Backtrack and #L.ActiveShots > 0 then
-        return handleBacktrack(oldFNP, 4, self, ...)
-    end
-    return oldFNP(self, ...)
-end)
-local oldFNW
-oldFNW = hookfunction(workspace.FindPartOnRayWithWhitelist, function(self, ...)
-    if L.SA_Enabled and L.SA_Backtrack and #L.ActiveShots > 0 then
-        return handleBacktrack(oldFNW, 4, self, ...)
-    end
-    return oldFNW(self, ...)
-end)
+local ManagedBullets = {}
 local oldFireServer
 task.spawn(function()
     while true do
         if Network and Network.FireServer and not oldFireServer then
             oldFireServer = hookfunction(Network.FireServer, function(...)
                 local args = {...}
+                if args[2] == "LowerStamina" and L.InfStamina then return end
+                if (args[2] == "DamageSelf" or args[2] == "TrainSmack") and L.NoFallDamage then return end
+                if args[2] == "ProjectileEvent" or args[2] == "RemoveProjectile" then
+                    if ManagedBullets[args[3]] then return end
+                    if args[5] == "Final" and args[6] == nil then return end
+                end
+
                 local isInit = false
                 for i = 1, #args do
                     if args[i] == "InitProjectiles" then
@@ -838,23 +928,70 @@ task.spawn(function()
                     local Target = SA_State.CurrentTarget
                     if Target and math.random(1, 100) <= L.SA_HitChance then
                         local data
+                        local bullets
                         for i = 1, #args do
                             if type(args[i]) == "table" and args[i].origin then
                                 data = args[i]
+                                bullets = args[i+1]
                                 break
                             end
                         end
                         
                         if data then
                             local stats, toolId = getWeaponStats()
+                            local speed = 1000
+                            if stats then
+                                speed = stats.ProjectileSpeed or stats.ProjectileVelocity or stats.BulletSpeed or stats.Speed or 1000
+                            end
                             local targetPart = getTargetPart(Target, "SA")
                             local aimPos, timeOfFlight = getAccurateAimPosition(Target, data.origin, stats, toolId)
                             if aimPos then
                                 data.direction = (aimPos - data.origin).Unit
                                 if L.SA_Backtrack then
-                                    local partCFrames = {}
-                                    for _, p in ipairs(Target:GetDescendants()) do if p:IsA("BasePart") then partCFrames[p] = p.CFrame end end
-                                    M.insert(L.ActiveShots, { Target = Target, PartCFrames = partCFrames, TargetPart = targetPart, Time = M.clock(), MaxTime = (timeOfFlight or 1) + 1 })
+                                    if type(bullets) == "table" then
+                                        for _, bId in pairs(bullets) do ManagedBullets[bId] = true end
+                                        
+                                        oldFireServer(unpack(args))
+                                        
+                                        local targetHitPos = targetPart.Position
+                                        local targetCF = targetPart.CFrame
+                                        local isPlayer = game.Players:GetPlayerFromCharacter(Target) ~= nil
+                                        local isNPC = Target:IsDescendantOf(workspace:WaitForChild("WORKSPACE_Entities"):WaitForChild("NPCs"))
+                                        local isAnimal = Target:IsDescendantOf(workspace:WaitForChild("WORKSPACE_Entities"):WaitForChild("Animals"))
+                                        
+                                        task.spawn(function()
+                                            task.wait(timeOfFlight)
+                                            local SyncedTime = os.time()
+                                            pcall(function()
+                                                local g = require(game:GetService("ReplicatedStorage").SharedModules.Global)
+                                                SyncedTime = g.SyncedTime:GetTime()
+                                            end)
+                                            
+                                            for _, bId in pairs(bullets) do
+                                                local ref = nil
+                                                pcall(function() ref = Network:GetReference(targetPart, 'CharacterPart') end)
+                                                if not isPlayer or ref then
+                                                    if isNPC then
+                                                        ref = {Target.Parent.Parent, Target.Name}
+                                                    elseif isAnimal then
+                                                        ref = targetPart or ref
+                                                    end
+                                                    
+                                                    oldFireServer(args[1], "ProjectileEvent", bId, SyncedTime, "Final", ref or Target,
+                                                        targetCF:PointToObjectSpace(targetHitPos),
+                                                        targetCF:VectorToObjectSpace(Vector3.FromNormalId(Enum.NormalId.Front)),
+                                                        targetCF:VectorToObjectSpace(data.direction),
+                                                        targetHitPos,
+                                                        Vector3.FromNormalId(Enum.NormalId.Front),
+                                                        targetPart.Material.Name)
+                                                    
+                                                    task.defer(oldFireServer, args[1], "RemoveProjectile", bId)
+                                                    ManagedBullets[bId] = nil
+                                                end
+                                            end
+                                        end)
+                                        return
+                                    end
                                 end
                             end
                         end
@@ -872,6 +1009,9 @@ task.spawn(function()
         task.wait(1)
     end
 end)
+
+
+
 local oldNewIndex
 oldNewIndex = hookmetamethod(game, "__newindex", function(self, key, value)
     if not checkcaller() then
@@ -981,7 +1121,7 @@ local function hAll(m)
     if bx and bx.Visible then bx.Visible = false end if ou and ou.Visible then ou.Visible = false end 
     if fl and fl.Visible then fl.Visible = false end if hO and hO.Visible then hO.Visible = false end 
     if hT and hT.Visible then hT.Visible = false L.HTFC[m] = nil end
-    if hB then for i = 1, 60 do if hB[i] and hB[i].Visible then hB[i].Visible = false end end end
+    if hB then for i = 1, 65 do if hB[i] and hB[i].Visible then hB[i].Visible = false end end end
     if hSolid and hSolid.Visible then hSolid.Visible = false end
     if aCList and aCList.Enabled then aCList.Enabled = false end
     if L.SKD[m] then for i = 1, 40 do local l = L.SKD[m][i] if l.Visible then l.Visible = false end end end
@@ -1540,9 +1680,9 @@ local Extra_Tab = ESP_Tabbox:AddTab("Extra")
 Extra_Tab:AddToggle("HideProtected", {Text = "Hide Protected", Default = false, Tooltip = "Hides protected players esp.", Callback = function(v) L.HideProtected = v end})
 Extra_Tab:AddToggle("VisOnly", {Text = "Only Show When Visible", Default = false, Tooltip = "Only shows ESP for visible players/npcs/animals.", Callback = function(v) L.VisOnly = v end})
 Extra_Tab:AddDivider()
-Extra_Tab:AddToggle("OverwriteDuelOpponent", {Text = "Overwrite Duel Opponent", Default = false, Tooltip = "Overwrites the ESP color for current duel opponent.", Callback = function(v) L.OverwriteDuelOpponent = v end}):AddColorPicker("OverwriteDuelColor", {Default = Color3.fromRGB(255, 0, 0), Title = "Color", Callback = function(c) L.OverwriteDuelColor = c end})
-Extra_Tab:AddToggle("OverwritePriority", {Text = "Overwrite Priority Color", Default = false, Callback = function(v) L.PE = v; if Library.PlayerList then Library.PlayerList:RefreshColors() end end}):AddColorPicker("OverwritePriorityCP", {Default = L.PCOC, Title = "Priority Color", Callback = function(c) L.PCOC = c; if Library.PlayerList then Library.PlayerList:RefreshColors() end end})
-Extra_Tab:AddToggle("OverwriteFriendly", {Text = "Overwrite Friendly Color", Default = false, Callback = function(v) L.FE = v; if Library.PlayerList then Library.PlayerList:RefreshColors() end end}):AddColorPicker("OverwriteFriendlyCP", {Default = L.FCOC, Title = "Friendly Color", Callback = function(c) L.FCOC = c; if Library.PlayerList then Library.PlayerList:RefreshColors() end end})
+Extra_Tab:AddToggle("OverwriteDuelOpponent", {Text = "Overwrite Duel Opponent", Default = true, Tooltip = "Overwrites the ESP color for current duel opponent.", Callback = function(v) L.OverwriteDuelOpponent = v end}):AddColorPicker("OverwriteDuelColor", {Default = Color3.fromRGB(255, 240, 108), Title = "Color", Callback = function(c) L.OverwriteDuelColor = c end})
+Extra_Tab:AddToggle("OverwritePriority", {Text = "Overwrite Priority Color", Default = true, Callback = function(v) L.PE = v; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end}):AddColorPicker("OverwritePriorityCP", {Default = Color3.fromRGB(255, 0, 0), Title = "Priority Color", Callback = function(c) L.PCOC = c; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end})
+Extra_Tab:AddToggle("OverwriteFriendly", {Text = "Overwrite Friendly Color", Default = true, Callback = function(v) L.FE = v; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end}):AddColorPicker("OverwriteFriendlyCP", {Default = Color3.fromRGB(0, 255, 0), Title = "Friendly Color", Callback = function(c) L.FCOC = c; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end})
 Extra_Tab:AddSlider("FadeInTime", {Text = "Fade In", Default = 0.15, Min = 0.05, Max = 2, Rounding = 2, Compact = true, Callback = function(v) L.FIn = v end})
 Extra_Tab:AddSlider("FadeOutTime", {Text = "Fade Out", Default = 0.15, Min = 0.05, Max = 2, Rounding = 2, Compact = true, Callback = function(v) L.FOut = v end})
 local VisualsTracers = Tabs.Visuals:AddLeftGroupbox("Bullet Tracers")
@@ -1653,11 +1793,11 @@ Combat_SA:AddSlider("SA_MaxDist", {Text = "Max Distance", Default = 1000, Min = 
 Combat_SA:AddDropdown("SA_TargetPart", {Values = {"Head", "UpperTorso", "Torso", "LowerTorso", "Random"}, Default = 1, Multi = false, Text = "Hit Part", Callback = function(v) L.SA_TargetPart = v end})
 Combat_SA:AddDropdown("SA_Targets", {Values = {"Players", "NPCs", "Animals"}, Default = {"Players"}, Multi = true, Text = "Target Types", Callback = function(v) L.SA_Targets = v end})
 Combat_SA:AddDivider()
-Combat_SA:AddToggle("SA_Snapline", {Text = "Snapline", Default = false, Callback = function(v) L.SA_Snapline = v end}):AddColorPicker("SA_Snapline_Color", {Default = Color3.fromRGB(255, 255, 255), Title = "Color", Callback = function(c) snaplineLine.Color = c; L.SA_Snapline_Color = c end})
+Combat_SA:AddToggle("SA_Snapline", {Text = "Snapline", Default = false, Callback = function(v) L.SA_Snapline = v end}):AddColorPicker("SA_Snapline_Color", {Default = Color3.fromRGB(255, 255, 255), Title = "Color", Callback = function(c) if snaplineLine then snaplineLine.Color = c end; L.SA_Snapline_Color = c end})
 local SA_FOV_Toggle = Combat_SA:AddToggle("SA_FOV_Vis", {Text = "Show FOV", Default = false, Callback = function(v) L.SA_FOV_Vis = v end})
 SA_FOV_Toggle:AddColorPicker("SA_FOV_Color", {Default = Color3.fromRGB(255, 255, 255), Transparency = 0, Title = "Color", Callback = function(c, t) 
     L.SA_FOV_Color = c; L.SA_FOV_Transparency = t
-    fovCircle.Color = c; fovCircle.Transparency = 1 - t
+    if fovCircle then fovCircle.Color = c; fovCircle.Transparency = 1 - t end
 end})
 local SA_FOV_Dep = Combat_SA:AddDependencyBox(); SA_FOV_Dep:SetupDependencies({{SA_FOV_Toggle, true}})
 local SA_Grad_Toggle = SA_FOV_Dep:AddToggle("SA_FOV_Gradient", {Text = "Gradient Color", Default = false, Callback = function(v) L.SA_FOV_Gradient = v end})
@@ -1683,11 +1823,11 @@ Combat_Aim:AddSlider("Aim_MaxDist", {Text = "Max Distance", Default = 1000, Min 
 Combat_Aim:AddDropdown("Aim_TargetPart", {Values = {"Head", "UpperTorso", "Torso", "LowerTorso", "Random"}, Default = 1, Multi = false, Text = "Aimbot Bone", Callback = function(v) L.Aim_TargetPart = v end})
 Combat_Aim:AddDropdown("Aim_Targets", {Values = {"Players", "NPCs", "Animals"}, Default = {"Players"}, Multi = true, Text = "Targets", Callback = function(v) L.Aim_Targets = v end})
 Combat_Aim:AddDivider()
-Combat_Aim:AddToggle("Aim_Snapline", {Text = "Snapline", Default = false, Callback = function(v) L.Aim_Snapline = v end}):AddColorPicker("Aim_Snapline_Color", {Default = Color3.fromRGB(255, 255, 255), Title = "Color", Callback = function(c) aimSnaplineLine.Color = c; L.Aim_Snapline_Color = c end})
+Combat_Aim:AddToggle("Aim_Snapline", {Text = "Snapline", Default = false, Callback = function(v) L.Aim_Snapline = v end}):AddColorPicker("Aim_Snapline_Color", {Default = Color3.fromRGB(255, 255, 255), Title = "Color", Callback = function(c) if aimSnaplineLine then aimSnaplineLine.Color = c end; L.Aim_Snapline_Color = c end})
 local Aim_FOV_Toggle = Combat_Aim:AddToggle("Aim_FOV_Vis", {Text = "Show FOV", Default = false, Callback = function(v) L.Aim_FOV_Vis = v end})
 Aim_FOV_Toggle:AddColorPicker("Aim_FOV_Color", {Default = Color3.fromRGB(255, 255, 255), Transparency = 0, Title = "Color", Callback = function(c, t) 
     L.Aim_FOV_Color = c; L.Aim_FOV_Transparency = t
-    aimFovCircle.Color = c; aimFovCircle.Transparency = 1 - t
+    if aimFovCircle then aimFovCircle.Color = c; aimFovCircle.Transparency = 1 - t end
 end})
 local Aim_FOV_Dep = Combat_Aim:AddDependencyBox(); Aim_FOV_Dep:SetupDependencies({{Aim_FOV_Toggle, true}})
 local Aim_Grad_Toggle = Aim_FOV_Dep:AddToggle("Aim_FOV_Gradient", {Text = "Gradient Color", Default = false, Callback = function(v) L.Aim_FOV_Gradient = v end})
@@ -1759,92 +1899,131 @@ end
 EmoteDep:AddButton("Stop Emote", function()
     if currentEmoteTrack then currentEmoteTrack:Stop(); currentEmoteTrack:Destroy(); currentEmoteTrack = nil end
 end)
+
+local Misc_Troll = Tabs.Misc:AddLeftGroupbox("Troll")
+local MBF_Toggle = Misc_Troll:AddToggle("MBF_Enabled", {Text = "Money Bag Fling", Default = false, Callback = function(v) 
+    L.MBF_Enabled = v 
+    if v and Toggles.MBF_ShowRadius then Toggles.MBF_ShowRadius:SetValue(true) end
+end})
+MBF_Toggle:AddKeyPicker("MBF_Key", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Money Bag Fling", NoUI = false})
+
+local MBF_Dep = Misc_Troll:AddDependencyBox(); MBF_Dep:SetupDependencies({{MBF_Toggle, true}})
+MBF_Dep:AddToggle("MBF_ShowRadius", {Text = "Show Radius", Default = false, Callback = function(v) L.MBF_ShowRadius = v end}):AddColorPicker("MBF_RadiusColor", {Default = Color3.fromRGB(255, 255, 255), Title = "Radius Color", Callback = function(c) L.MBF_RadiusColor = c end})
+MBF_Dep:AddSlider("MBF_Radius", {Text = "Radius", Default = 25, Min = 5, Max = 100, Rounding = 1, Compact = true, Callback = function(v) L.MBF_Radius = v end})
+local MBF_StatusLabel = MBF_Dep:AddLabel("Status: <font color=\"#FFFFFF\">Inactive</font>")
+MBF_StatusLabel.RichText = true
+
+local function updateMBFStatus(status, color)
+    local hex = string.format("%02X%02X%02X", math.floor(color.R * 255), math.floor(color.G * 255), math.floor(color.B * 255))
+    MBF_StatusLabel:SetText(string.format("Status: <font color=\"#%s\">%s</font>", hex, status))
+end
 local LocalMods = Tabs.Misc:AddRightGroupbox("Local Mods")
-local SpeedToggle = LocalMods:AddToggle("SpeedEnabled", {Text = "Speed", Default = false, Callback = function(v) L.SpeedEnabled = v end})
-SpeedToggle:AddKeyPicker("SpeedKey", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Speed", NoUI = false})
-local SpeedDep = LocalMods:AddDependencyBox(); SpeedDep:SetupDependencies({{SpeedToggle, true}})
-SpeedDep:AddSlider("SpeedAmount", {Text = "Walkspeed Amount", Default = 25, Min = 16, Max = 28, Rounding = 0, Compact = true, Callback = function(v) L.SpeedAmount = v end})
+-- Fly
 local FlyToggle = LocalMods:AddToggle("FlyEnabled", {Text = "Fly", Default = false, Callback = function(v) L.FlyEnabled = v end})
 FlyToggle:AddKeyPicker("FlyKey", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Fly", NoUI = false})
 local FlyDep = LocalMods:AddDependencyBox(); FlyDep:SetupDependencies({{FlyToggle, true}})
 FlyDep:AddSlider("FlySpeed", {Text = "Fly Speed Amount", Default = 25, Min = 10, Max = 28, Rounding = 0, Compact = true, Callback = function(v) L.FlySpeed = v end})
+-- Speed
+local SpeedToggle = LocalMods:AddToggle("SpeedEnabled", {Text = "Speed", Default = false, Callback = function(v) L.SpeedEnabled = v end})
+SpeedToggle:AddKeyPicker("SpeedKey", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Speed", NoUI = false})
+local SpeedDep = LocalMods:AddDependencyBox(); SpeedDep:SetupDependencies({{SpeedToggle, true}})
+SpeedDep:AddSlider("SpeedAmount", {Text = "Walkspeed Amount", Default = 25, Min = 16, Max = 28, Rounding = 0, Compact = true, Callback = function(v) L.SpeedAmount = v end})
+-- No Ragdoll
+LocalMods:AddToggle("NoRagdoll", {Text = "No Ragdoll", Default = false, Callback = function(v) 
+    L.NoRagdoll = v 
+    if v and Modules.plrCharacter then
+        local _Ragdoll = Modules.plrCharacter.Ragdoll
+        Modules.plrCharacter.Ragdoll = wwguard(_Ragdoll, function(...)
+            if not L.NoRagdoll then return _Ragdoll(...) end
+        end)
+    end
+end})
+-- No Jump Delay
 LocalMods:AddToggle("NoJumpDelay", {Text = "No Jump Delay", Default = false, Callback = function(v) L.NoJumpDelay = v end})
-LocalMods:AddToggle("NoRagdoll", {Text = "No Ragdoll", Default = false, Callback = function(v) L.NoRagdoll = v end})
+-- No Fall Damage
+LocalMods:AddToggle("NoFallDamage", {Text = "No Fall Damage", Default = false, Callback = function(v) L.NoFallDamage = v end})
+-- Auto Break Free
+LocalMods:AddToggle("AutoBreakFree", {Text = "Auto Break Free", Default = false, Callback = function(v) 
+    L.AutoBreakFree = v 
+    if v and Modules.plrCharacter then
+        local _BreakFreePerc = Modules.plrCharacter.BreakFreePerc
+        setmetatable(Modules.plrCharacter, {
+            __index = function(t, p)
+                if p == "BreakFreePerc" then return _BreakFreePerc end
+                return rawget(t, p)
+            end,
+            __newindex = function(t, p, v)
+                if p == "BreakFreePerc" then
+                    _BreakFreePerc = v
+                    if L.AutoBreakFree and v > 0 then _BreakFreePerc = 1 end
+                else
+                    rawset(t, p, v)
+                end
+            end
+        })
+        Modules.plrCharacter.BreakFreePerc = nil
+    end
+end})
+-- Auto Get Up
+LocalMods:AddToggle("AutoGetUp", {Text = "Auto Get Up", Default = false, Callback = function(v) 
+    L.AutoGetUp = v 
+    if v then
+        task.spawn(function()
+            while L.AutoGetUp do
+                if Modules.Network and Modules.plrCharacter and Modules.plrCharacter:CanGetUp() then
+                    pcall(function()
+                        if Modules.repState.State.Stamina <= 0 then
+                            Modules.plrCharacter:ToggleSelfRagdoll(false)
+                            Modules.Network:InvokeServer("AttemptGetUp")
+                        end
+                    end)
+                end
+                task.wait()
+            end
+        end)
+    end
+end})
+-- Infinite Stamina
 LocalMods:AddToggle("InfiniteStamina", {Text = "Infinite Stamina", Default = false, Callback = function(v) 
     L.InfStamina = v
-    local params = S.ReplicatedStorage:FindFirstChild("Params")
-    local charParams = params and params:FindFirstChild("Character")
-    if charParams then
-        local costs = { charParams:FindFirstChild("RollStaminaCost"), charParams:FindFirstChild("JumpStaminaCost") }
-        for _, cost in ipairs(costs) do
-            if cost and cost:IsA("NumberValue") then
-                if v then
-                    originalStaminaCosts[cost] = cost.Value
-                    cost.Value = 0
-                elseif originalStaminaCosts[cost] then
-                    cost.Value = originalStaminaCosts[cost]
-                end
+    if v and Modules.repState then
+        local _repState = Modules.repState
+        local _Stamina = _repState.State.Stamina
+        setmetatable(_repState.State, {
+            __index = function(_, p)
+                if p == "Stamina" then return L.InfStamina and 100 or _Stamina end
+            end,
+            __newindex = function(t, p, v)
+                if p == "Stamina" then _Stamina = v else rawset(t, p, v) end
             end
-        end
+        })
+        _repState.State.Stamina = nil
     end
 end})
-LocalMods:AddToggle("KickerDoorFaster", {Text = "Kicker Door Faster", Default = false, Callback = function(v) 
-    L.KickerDoorFaster = v
-    local params = S.ReplicatedStorage:FindFirstChild("Params")
-    local charParams = params and params:FindFirstChild("Character")
-    local kickDoor = charParams and charParams:FindFirstChild("KickDoor")
-    if kickDoor then
-        local values = { kickDoor:FindFirstChild("Time"), kickDoor:FindFirstChild("Debounce"), kickDoor:FindFirstChild("Distance"), kickDoor:FindFirstChild("DistanceCloser") }
-        for _, val in ipairs(values) do
-            if val and val:IsA("NumberValue") then
-                if v then
-                    originalKickDoorValues[val] = val.Value
-                    val.Value = 0
-                elseif originalKickDoorValues[val] then
-                    val.Value = originalKickDoorValues[val]
-                end
-            end
-        end
-    end
-end})
-local RollSpeedToggle = LocalMods:AddToggle("RollSpeedModifier", {Text = "Roll Speed Modifier", Default = false, Callback = function(v) 
+-- Roll Speed Modifier
+local RollSpeedToggle = LocalMods:AddToggle("RollSpeedModifier", {Text = "Roll Speed Modifier", Default = false, Callback = function(v)
     L.RollSpeedModifier = v
-    local params = S.ReplicatedStorage:FindFirstChild("Params")
-    local charParams = params and params:FindFirstChild("Character")
-    local roll = charParams and charParams:FindFirstChild("Roll")
-    if roll then
-        local p1 = roll:FindFirstChild("Phase1")
-        local p2 = roll:FindFirstChild("Phase2")
-        local values = { p1 and p1:FindFirstChild("To"), p2 and p2:FindFirstChild("To") }
-        for _, val in ipairs(values) do
-            if val and val:IsA("NumberValue") then
-                if v then
-                    if not O.Roll[val] then O.Roll[val] = val.Value end
-                    val.Value = O.Roll[val] * L.RollSpeedAmount
-                elseif O.Roll[val] then
-                    val.Value = O.Roll[val]
-                end
-            end
+    local ok, p2To = pcall(function()
+        return game:GetService("ReplicatedStorage").Params.Character.Roll.Phase2.To
+    end)
+    if ok and p2To and p2To:IsA("NumberValue") then
+        if v then
+            if not O.Roll[p2To] then O.Roll[p2To] = p2To.Value end
+            p2To.Value = O.Roll[p2To] * L.RollSpeedAmount
+        elseif O.Roll[p2To] then
+            p2To.Value = O.Roll[p2To]
         end
     end
 end})
 local RollSpeedDep = LocalMods:AddDependencyBox(); RollSpeedDep:SetupDependencies({{RollSpeedToggle, true}})
-RollSpeedDep:AddSlider("RollSpeedAmount", {Text = "Speed Amount", Default = 1, Min = 0.1, Max = 2, Rounding = 1, Suffix = "x", Compact = true, Callback = function(v) 
+RollSpeedDep:AddSlider("RollSpeedAmount", {Text = "Roll Speed", Default = 1.25, Min = 0.5, Max = 5, Rounding = 2, Suffix = "x", Compact = true, Callback = function(v)
     L.RollSpeedAmount = v
-    if L.RollSpeedModifier then
-        local params = S.ReplicatedStorage:FindFirstChild("Params")
-        local charParams = params and params:FindFirstChild("Character")
-        local roll = charParams and charParams:FindFirstChild("Roll")
-        if roll then
-            local p1 = roll:FindFirstChild("Phase1")
-            local p2 = roll:FindFirstChild("Phase2")
-            local values = { p1 and p1:FindFirstChild("To"), p2 and p2:FindFirstChild("To") }
-            for _, val in ipairs(values) do
-                if val and val:IsA("NumberValue") and originalRollPhaseValues[val] then
-                    val.Value = originalRollPhaseValues[val] * v
-                end
-            end
-        end
+    if not L.RollSpeedModifier then return end
+    local ok, p2To = pcall(function()
+        return game:GetService("ReplicatedStorage").Params.Character.Roll.Phase2.To
+    end)
+    if ok and p2To and p2To:IsA("NumberValue") and O.Roll[p2To] then
+        p2To.Value = O.Roll[p2To] * v
     end
 end})
 local function getActiveDuelOpponent()
@@ -2033,7 +2212,7 @@ local function onRenderSteppedESP(dt, cP, n, mP, camCF)
                     local fP = L.HTFC[m] or 0 if vs < 0.99 and not data.removed then fP = math.min(fP + dt / 0.15, 1) else fP = math.max(fP - dt / 0.15, 0) end L.HTFC[m] = fP
                     if fP > 0.01 then cProp(hT, "Text", tostring(math.floor(vs * 100))) cPropV2(hT, "Position", x - 15, y + h - bh - 7) cProp(hT, "Color", getHlColor(L[prefix .. "HTC"], hlTrans, actColor, duelTrans, L.OverwriteDuelColor, data.prioTrans, L.PCOC, data.friendTrans, L.FCOC)) cProp(hT, "Transparency", fA * fP) cProp(hT, "Visible", true) else cProp(hT, "Visible", false) end
                 elseif hT then cProp(hT, "Visible", false) end
-            else cProp(hO, "Visible", false) for i = 1, 60 do if hB[i] then hB[i].Visible = false end end if hT then cProp(hT, "Visible", false) end end
+            else cProp(hO, "Visible", false) for i = 1, 65 do if hB[i] then hB[i].Visible = false end end if hT then cProp(hT, "Visible", false) end end
         elseif hB and hO then cProp(hB, "Visible", false) cProp(hO, "Visible", false) end
         if aCList then
             if cE and L[prefix .. "Master"] and not data.removed then
@@ -2340,6 +2519,192 @@ end)
 for _, child in ipairs(workspace.Terrain:GetChildren()) do
     addProjectile(child)
 end
+
+local handleDroppedItem
+local handleThunderstruckTree
+local handleOre
+
+L.Ore_Cache = L.Ore_Cache or {}
+
+local ActiveMBF_Bag = nil
+local MBF_Target = nil
+local MBF_Angle = 0
+
+L.Connections.MBF = RS.Heartbeat:Connect(function(dt)
+    if not L.MBF_Enabled then
+        if ActiveMBF_Bag then ActiveMBF_Bag = nil end
+        if MBF_Target then MBF_Target = nil end
+        for i = 1, 73 do MBF_RingLines[i].Visible = false; MBF_RingOutlineLines[i].Visible = false end
+        if updateMBFStatus then updateMBFStatus("Inactive", Color3.fromRGB(255, 255, 255)) end
+        return
+    end
+
+    local char = getLocalCharacter()
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        for i = 1, 73 do MBF_RingLines[i].Visible = false; MBF_RingOutlineLines[i].Visible = false end
+        if updateMBFStatus then updateMBFStatus("Character Missing", Color3.fromRGB(255, 100, 100)) end
+        return
+    end
+
+    -- Update 3D Radius Ring (Smooth Lerped Update)
+    if L.MBF_ShowRadius then
+        local rad = L.MBF_Radius
+        local color = L.MBF_RadiusColor or Color3.new(1, 1, 1)
+        
+        local rayParams = RaycastParams.new()
+        rayParams.FilterDescendantsInstances = {LP.Character, WS:FindFirstChild("WORKSPACE_Entities")}
+        rayParams.FilterType = Enum.RaycastFilterType.Exclude
+        
+        local ray = WS:Raycast(hrp.Position, Vector3.new(0, -100, 0), rayParams)
+        local targetGroundPos = ray and ray.Position or (hrp.Position - Vector3.new(0, 3, 0))
+        
+        -- Smooth Lerp Position
+        if MBF_CurrentPos == Vector3.new(0,0,0) then MBF_CurrentPos = targetGroundPos end
+        MBF_CurrentPos = MBF_CurrentPos:Lerp(targetGroundPos, 0.15)
+        
+        local lastPoint = nil
+        local firstPoint = nil
+        
+        for i = 1, 72 do
+            local angle = math.rad((i - 1) * 5)
+            local offset = Vector3.new(math.cos(angle) * rad, 0.05, math.sin(angle) * rad)
+            local worldPos = MBF_CurrentPos + offset
+            
+            local screenPos, onScreen = C:WorldToViewportPoint(worldPos)
+            local line = MBF_RingLines[i]
+            local outline = MBF_RingOutlineLines[i]
+            
+            if onScreen and lastPoint then
+                local currentV2 = M.v2(screenPos.X, screenPos.Y)
+                
+                line.From = lastPoint
+                line.To = currentV2
+                line.Color = color
+                line.Visible = true
+                
+                outline.From = lastPoint
+                outline.To = currentV2
+                outline.Visible = true
+            else
+                line.Visible = false
+                outline.Visible = false
+            end
+            
+            lastPoint = M.v2(screenPos.X, screenPos.Y)
+            if i == 1 then firstPoint = lastPoint end
+        end
+
+        -- Final Closure (Segment 73)
+        if firstPoint and lastPoint then
+            local closeLine = MBF_RingLines[73]
+            local closeOutline = MBF_RingOutlineLines[73]
+            closeLine.From = lastPoint
+            closeLine.To = firstPoint
+            closeLine.Color = color
+            closeLine.Visible = true
+            
+            closeOutline.From = lastPoint
+            closeOutline.To = firstPoint
+            closeOutline.Visible = true
+        else
+            MBF_RingLines[73].Visible = false
+            MBF_RingOutlineLines[73].Visible = false
+        end
+    else
+        for i = 1, 73 do
+            MBF_RingLines[i].Visible = false
+            MBF_RingOutlineLines[i].Visible = false
+        end
+    end
+
+    -- Bag Search Logic
+    if not ActiveMBF_Bag or not ActiveMBF_Bag.Parent then
+        ActiveMBF_Bag = nil
+        local ignore = WS:FindFirstChild("Ignore")
+        if ignore then
+            local closestDist = 60
+            for _, child in ipairs(ignore:GetChildren()) do
+                if child.Name == "MoneyBag" then
+                    local bag = child:FindFirstChild("Bag")
+                    if bag and bag:IsA("BasePart") then
+                        local dist = (bag.Position - hrp.Position).Magnitude
+                        if dist < closestDist then
+                            ActiveMBF_Bag = bag
+                            closestDist = dist
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if not ActiveMBF_Bag then
+        if updateMBFStatus then updateMBFStatus("Waiting for Money Bag", Color3.fromRGB(255, 255, 0)) end
+        return
+    end
+
+    -- Target Acquisition (Persistent targeting)
+    if MBF_Target then
+        local targetHum = MBF_Target.Parent:FindFirstChild("Humanoid")
+        if not MBF_Target.Parent or (targetHum and targetHum.Health <= 0) or (MBF_Target.Position - hrp.Position).Magnitude > L.MBF_Radius then
+            MBF_Target = nil
+        end
+    end
+
+    if not MBF_Target then
+        local we = WS:FindFirstChild("WORKSPACE_Entities")
+        local playersFolder = we and we:FindFirstChild("Players")
+        
+        if playersFolder then
+            for _, charModel in ipairs(playersFolder:GetChildren()) do
+                if charModel:IsA("Model") and charModel.Name ~= LP.Name then
+                    if L.Friendlies and L.Friendlies[charModel.Name] then continue end
+                    
+                    local hum = charModel:FindFirstChild("Humanoid")
+                    local targetHrp = charModel:FindFirstChild("HumanoidRootPart")
+                    
+                    if hum and hum.Health > 0 and targetHrp then
+                        local dist = (targetHrp.Position - hrp.Position).Magnitude
+                        if dist < L.MBF_Radius then
+                            MBF_Target = targetHrp
+                            break -- Lock onto the first valid target in range
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if MBF_Target then
+        if updateMBFStatus then updateMBFStatus("Flinging: " .. MBF_Target.Parent.Name, Color3.fromRGB(255, 50, 50)) end
+        
+        local targetPos = MBF_Target.Position
+        local dist = (targetPos - ActiveMBF_Bag.Position).Magnitude
+        
+        if dist > 4 then
+            -- Hybrid Interception (CFrame for smoothness + Velocity for server replication)
+            ActiveMBF_Bag.CFrame = ActiveMBF_Bag.CFrame:Lerp(CFrame.new(targetPos), 0.2)
+            ActiveMBF_Bag.AssemblyLinearVelocity = (targetPos - ActiveMBF_Bag.Position) * 30
+        else
+            -- High-Intensity Torso Glitch (Fling Protocol)
+            local glitch = Vector3.new(math.random(-10, 10)/20, math.random(-10, 10)/20, math.random(-10, 10)/20)
+            ActiveMBF_Bag.CFrame = MBF_Target.CFrame * CFrame.new(glitch) * CFrame.Angles(math.rad(math.random(0, 360)), math.rad(math.random(0, 360)), math.rad(math.random(0, 360)))
+            
+            ActiveMBF_Bag.AssemblyAngularVelocity = Vector3.new(30000, 30000, 30000)
+            ActiveMBF_Bag.AssemblyLinearVelocity = Vector3.new(0, 5000, 0)
+        end
+    else
+        if updateMBFStatus then updateMBFStatus("Bag Hooked | Orbiting", Color3.fromRGB(50, 255, 50)) end
+        -- Hybrid Orbiting (CFrame for perfect visual + Velocity for server replication)
+        MBF_Angle = MBF_Angle + dt * 8
+        local orbitPos = hrp.Position + Vector3.new(math.cos(MBF_Angle) * 6, 1.5, math.sin(MBF_Angle) * 6)
+        
+        ActiveMBF_Bag.CFrame = ActiveMBF_Bag.CFrame:Lerp(CFrame.new(orbitPos), 0.2)
+        ActiveMBF_Bag.AssemblyLinearVelocity = (orbitPos - ActiveMBF_Bag.Position) * 30
+        ActiveMBF_Bag.AssemblyAngularVelocity = Vector3.zero
+    end
+end)
 
 L.Connections.RenderStepped = RS.RenderStepped:Connect(function(dt)
     local now = M.clock()
@@ -2710,23 +3075,34 @@ L.Connections.RenderStepped = RS.RenderStepped:Connect(function(dt)
                     gravity = profile.Drop or 34
                 end
                 
-                local dist = (pos - cP).Magnitude
-                local travelTime = dist / math.max(speed, 1)
-
+                local function SolveTime(p1, s, p2, grav)
+                    local diff = p2 - p1
+                    local horiz = M.v3(diff.X, 0, diff.Z)
+                    local t2 = horiz.Magnitude / math.max(s, 1)
+                    if t2 == 0 then t2 = 0.001 end
+                    local vY = (diff.Y + 0.5 * math.abs(grav) * t2 * t2) / t2
+                    local vHoriz = horiz.Unit * s
+                    return M.v3(vHoriz.X, vY, vHoriz.Z), t2
+                end
+                
+                local targetVel = M.v3(0, 0, 0)
                 if L.Aim_BulletLead and espCache[aimClosestTarget] then
-                    local targetVel = M.v3(0, 0, 0)
                     local hrp = aimClosestTarget:FindFirstChild("HumanoidRootPart") or aimClosestTarget:FindFirstChild("Torso") or aimClosestTarget:FindFirstChild("Head")
                     if hrp and hrp:IsA("BasePart") then targetVel = hrp.AssemblyLinearVelocity or hrp.Velocity or M.v3(0, 0, 0) end
                     if targetVel.Magnitude < 0.1 and espCache[aimClosestTarget].velocity then targetVel = espCache[aimClosestTarget].velocity end
-                    
-                    pos = pos + (targetVel * travelTime)
                 end
                 
-                if L.Aim_BulletDrop then
-                    dist = (pos - cP).Magnitude
-                    travelTime = dist / math.max(speed, 1)
-                    pos = pos + M.v3(0, 0.5 * gravity * travelTime * travelTime, 0)
+                local aimPos = pos
+                local reqVel = M.v3(0, 0, 0)
+                local travelTime = 0
+                local effectiveGrav = L.Aim_BulletDrop and gravity or 0
+                
+                for i = 1, 5 do
+                    aimPos = pos + (targetVel * travelTime)
+                    reqVel, travelTime = SolveTime(cP, speed, aimPos, effectiveGrav)
                 end
+                
+                pos = cP + reqVel
             end
             
             if L.Aim_Type == "Mouse" then
@@ -2777,12 +3153,7 @@ L.Connections.RenderStepped = RS.RenderStepped:Connect(function(dt)
             hum.Jump = true
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
-        if L.NoRagdoll and hum and hum.Health > 0 then
-            if hum:GetState() == Enum.HumanoidStateType.Physics then
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
-            end
-            if hum.PlatformStand then hum.PlatformStand = false end
-        end
+
     end
 
     onRenderSteppedESP(dt, cP, n, mP, camCF)
@@ -3036,9 +3407,10 @@ local function getDroppedItemType(m)
     local gem = m:FindFirstChild("Gem")
     if gem and gem:IsA("MeshPart") then return "Gems" end
     if ln:find("pelt") or ln:find("tooth") or ln:find("claw") or name == "AnimalMeat" then return "Animal Drops" end
+    if name == "MoneyBag" then return "Others" end
     return "Others"
 end
-local function handleDroppedItem(m, rm)
+handleDroppedItem = function(m, rm)
     if rm then
         local d = L.DI_Cache[m]
         if d then
@@ -3057,17 +3429,33 @@ local function handleDroppedItem(m, rm)
     local isLegendary = m.Name:lower():find("legendary") ~= nil
     L.DI_Cache[m] = {m = m, type = type, l = l, distL = dl, fA = 0, isLegendary = isLegendary}
 end
-local DI_Folder = WS:WaitForChild("WORKSPACE_Interactables"):WaitForChild("DroppedItems")
-DI_Folder.ChildAdded:Connect(function(c) task.wait(0.1) if c:IsA("Model") then handleDroppedItem(c, false) end end)
-DI_Folder.ChildRemoved:Connect(function(c) handleDroppedItem(c, true) end)
-for _, c in ipairs(DI_Folder:GetChildren()) do if c:IsA("Model") then handleDroppedItem(c, false) end end
+local DI_Folder = WS:WaitForChild("WORKSPACE_Interactables", 5)
+if DI_Folder then DI_Folder = DI_Folder:WaitForChild("DroppedItems", 5) end
+if DI_Folder then
+    DI_Folder.ChildAdded:Connect(function(c) task.wait(0.1) if c:IsA("Model") then handleDroppedItem(c, false) end end)
+    DI_Folder.ChildRemoved:Connect(function(c) handleDroppedItem(c, true) end)
+    for _, c in ipairs(DI_Folder:GetChildren()) do if c:IsA("Model") then handleDroppedItem(c, false) end end
+end
 
-local function handleThunderstruckTree(obj, rm)
+task.spawn(function()
+    local DI_Ignore = WS:FindFirstChild("Ignore")
+    if DI_Ignore then
+        DI_Ignore.ChildAdded:Connect(function(c) task.wait(0.1) if c.Name == "MoneyBag" and c:IsA("Model") then handleDroppedItem(c, false) end end)
+        DI_Ignore.ChildRemoved:Connect(function(c) if c.Name == "MoneyBag" then handleDroppedItem(c, true) end end)
+        for _, c in ipairs(DI_Ignore:GetChildren()) do 
+            if c.Name == "MoneyBag" and c:IsA("Model") then handleDroppedItem(c, false) end 
+            if _ % 50 == 0 then task.wait() end -- Prevent frame drops during initial scan
+        end
+    end
+end)
+print("roxy.win | ESP Listeners initialized.")
+
+handleThunderstruckTree = function(obj, rm)
     if rm then
         local d = L.TS_Cache[obj]
         if d then
-            if d.l then d.l.Visible = false d.l:Remove() end
-            if d.distL then d.distL.Visible = false d.distL:Remove() end
+            if d.l then pcall(function() d.l.Visible = false d.l:Remove() end) end
+            if d.distL then pcall(function() d.distL.Visible = false d.distL:Remove() end) end
             L.TS_Cache[obj] = nil
         end
         return
@@ -3129,7 +3517,6 @@ if geom then
     end)
 end
 
-L.Ore_Cache = {}
 local function getOreType(name)
     if name:find("Coal") then return "Coal" end
     if name:find("Copper") then return "Copper" end
@@ -3142,7 +3529,7 @@ local function getOreType(name)
     return "Unknown"
 end
 
-local function handleOre(m, rm)
+handleOre = function(m, rm)
     if rm then
         local d = L.Ore_Cache[m]
         if d then
@@ -3175,7 +3562,10 @@ local function handleOre(m, rm)
 end
 
 task.spawn(function()
-    local OreDepositsFolder = WS:WaitForChild("WORKSPACE_Interactables"):WaitForChild("Mining"):WaitForChild("OreDeposits")
+    local OreDepositsFolder = WS:WaitForChild("WORKSPACE_Interactables", 5)
+    if OreDepositsFolder then OreDepositsFolder = OreDepositsFolder:WaitForChild("Mining", 5) end
+    if OreDepositsFolder then OreDepositsFolder = OreDepositsFolder:WaitForChild("OreDeposits", 5) end
+    
     if OreDepositsFolder then
         local function setupFolder(folder)
             for _, ore in ipairs(folder:GetChildren()) do
@@ -3310,6 +3700,8 @@ Library:OnUnload(function()
     if aimFovCircleO then aimFovCircleO:Remove() end
     if aimSnaplineLine then aimSnaplineLine:Remove() end
     if aimSnaplineLineO then aimSnaplineLineO:Remove() end
+    for _, l in ipairs(MBF_RingLines) do l:Remove() end
+    for _, l in ipairs(MBF_RingOutlineLines) do l:Remove() end
     for _, l in ipairs(aimFovLines) do l:Remove() end
     for _, l in ipairs(aimFovOutlineLines) do l:Remove() end
     for m in pairs(L.DI_Cache) do handleDroppedItem(m, true) end
