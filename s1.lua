@@ -289,7 +289,8 @@ local L = {
     Animal_CTrans = 0.5, Animal_CFTrans = 0.5, Animal_FCase = "Normal", Animal_FS = 13,
     Animal_LegendaryOnly = false, Animal_LegendaryOverride = true, Animal_LegendaryColor = Color3.fromRGB(255, 255, 0),
     HGR = true, NPC_HGR = true, Animal_HGR = true, HGR_Anim = false, NPC_HGR_Anim = false, Animal_HGR_Anim = false, HGRS = 4, HGR_Type = "Pulsing Glow", NPC_HGR_Type = "Pulsing Glow", Animal_HGR_Type = "Pulsing Glow",
-    ND = {}, WD = {}, DD = {}, BD = {}, BOD = {}, BFD = {}, HD = {}, HOD = {}, HTD = {}, HSD = {}, AC = {}, SKD = {},
+    ND = {}, WD = {}, DD = {}, BD = {}, BOD = {}, BFD = {}, HD = {}, HOD = {}, HTD = {}, HSD = {}, AC = {}, SKD = {}, BtyD = {},
+    BountyE = false, BountyTC = Color3.new(1, 1, 1), BountyCache = {}, lastBountyUpdate = 0,
     VH = {}, HTFC = {}, State = {TargetFade = {}}, Connections = {},
     SK_N = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}, SK_C = {{1, 2}, {2, 3}, {2, 4}, {2, 5}, {2, 6}},
     R15_N = {"Head", "UpperTorso", "LowerTorso", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "RightUpperLeg", "RightLowerLeg", "RightFoot"},
@@ -305,7 +306,7 @@ local L = {
     Aim_FOV_Color = Color3.new(1,1,1), Aim_FOV_Transparency = 0, Aim_FOV_Rot = 0, Aim_FOV_Thickness = 1.5, Aim_Dynamic_FOV = false,
     Aim_HighlightTarget = false, Aim_Highlight_Color = Color3.fromRGB(255, 0, 0), OverwriteDuelOpponent = false, OverwriteDuelColor = Color3.fromRGB(255, 0, 0), SA_DuelOnly = false,
     FE = false, FCOC = Color3.fromRGB(0, 255, 0), PE = false, PCOC = Color3.fromRGB(255, 0, 0), WFE = false, Friendlies = {}, Priorities = {},
-    GM_NoRecoil = false, GM_RecoilAmount = 0, GM_NoSpread = false, GM_SpreadAmount = 0, GM_InstantReload = false, GM_ReloadSpeedModifier = false, GM_ReloadSpeedAmount = 2, GM_InfWallbang = false, GM_RapidFire = false, GM_AutoReload = false, GM_AutoSwap = false, GM_NoScope = false,
+    GM_NoRecoil = false, GM_RecoilAmount = 0, GM_NoSpread = false, GM_SpreadAmount = 0, GM_InstantReload = false, GM_ReloadSpeedModifier = false, GM_ReloadSpeedAmount = 2, GM_InfWallbang = false, GM_RapidFire = false, GM_AutoReload = false, GM_AutoSwap = false, GM_NoScope = false, HideProjErrors = false, ErrorHandlingMode = "Notify",
     OriginalStats = {}, ActiveShots = {},
     DI_Enabled = false, DI_Name = false, DI_NameColor = Color3.fromRGB(255, 255, 255), DI_Distance = false, DI_DistanceColor = Color3.fromRGB(255, 255, 255), DI_Measuring = "Studs", DI_Sort = {Ore = true, Gems = true, ["Animal Drops"] = true, Others = true},
     DI_LegendaryOverride = true, DI_LegendaryColor = Color3.fromRGB(255, 255, 0), DI_Font = 2, DI_FontCase = "Normal", DI_FontSize = 13, DI_MaxDistance = 10000,
@@ -1015,6 +1016,22 @@ end)
 local oldNewIndex
 oldNewIndex = hookmetamethod(game, "__newindex", function(self, key, value)
     if not checkcaller() then
+        if self == S.Lighting then
+            if L.NoFog and (key == "FogEnd" or key == "FogStart") then return end
+            if L.FullBright and (key == "Ambient" or key == "OutdoorAmbient" or key == "Brightness") then return end
+            if L.TimeOfDayEnabled and key == "ClockTime" then return end
+            if L.AmbientOverride and (key == "Ambient" or key == "OutdoorAmbient") then return end
+        end
+        if self:IsA("Atmosphere") then
+            if L.NoFog and key == "Density" then return end
+            if L.AtmosphereOverride and key == "Color" then return end
+        end
+        if self:IsA("ColorCorrectionEffect") then
+            if L.ColorCorrectionOverride and key == "TintColor" then return end
+        end
+        if self:IsA("BloomEffect") then
+            if L.BloomOverride and (key == "Intensity" or key == "Threshold" or key == "Size") then return end
+        end
         if L.NoJumpDelay and key == "Jump" and value == false then
             local char = getLocalCharacter()
             if self:IsA("Humanoid") and self.Parent == char and UIS:IsKeyDown(Enum.KeyCode.Space) and self.FloorMaterial ~= Enum.Material.Air then
@@ -1067,6 +1084,7 @@ local function uAF(id)
     L.Font = id
     for _, t in pairs(L.ND) do t.Font = id end for _, t in pairs(L.DD) do t.Font = id end
     for _, t in pairs(L.WD) do t.Font = id end for _, t in pairs(L.HTD) do t.Font = id end
+    if L.BtyD then for _, t in pairs(L.BtyD) do t.Font = id end end
 end
 local function gT(m) 
     local data = espCache[m]
@@ -1116,8 +1134,10 @@ local function cProp(d, k, v) if d[k] ~= v then d[k] = v end end
 local function cPropV2(d, k, x, y) local c = d[k] if c.X ~= x or c.Y ~= y then d[k] = M.v2(x, y) end end
 local function hAll(m)
     local tN, tWp, tD, bx, ou, fl, hB, hO, hT, aCList, hSolid = L.ND[m], L.WD[m], L.DD[m], L.BD[m], L.BOD[m], L.BFD[m], L.HD[m], L.HOD[m], L.HTD[m], L.AC[m], L.HSD[m]
+    local tBty = L.BtyD and L.BtyD[m]
     if tN and tN.Visible then tN.Visible = false end if tWp and tWp.Visible then tWp.Visible = false end 
     if tD and tD.Visible then tD.Visible = false end 
+    if tBty and tBty.Visible then tBty.Visible = false end
     if bx and bx.Visible then bx.Visible = false end if ou and ou.Visible then ou.Visible = false end 
     if fl and fl.Visible then fl.Visible = false end if hO and hO.Visible then hO.Visible = false end 
     if hT and hT.Visible then hT.Visible = false L.HTFC[m] = nil end
@@ -1129,6 +1149,7 @@ end
 local function cD(m) if L.DD[m] then return end local d = Drawing.new("Text") d.Center = true d.Outline = true d.Size = 13 d.Font = L.Font d.Visible = false L.DD[m] = d end
 local function cW(m) if L.WD[m] then return end local d = Drawing.new("Text") d.Center = true d.Outline = true d.Size = 13 d.Font = L.Font d.Visible = false L.WD[m] = d end
 local function cN(m) if L.ND[m] then return end local d = Drawing.new("Text") d.Center = true d.Outline = true d.Size = 13 d.Font = L.Font d.Visible = false L.ND[m] = d end
+local function cBty(m) if L.BtyD and L.BtyD[m] then return end local d = Drawing.new("Text") d.Center = false d.Outline = true d.Size = 13 d.Font = L.Font d.Visible = false if not L.BtyD then L.BtyD = {} end L.BtyD[m] = d end
 local function cB1(m) if L.BD[m] then return end local o = Drawing.new("Square") o.Color = Color3.new(0, 0, 0) o.Thickness = 3 o.Filled = false o.Visible = false local b = Drawing.new("Square") b.Thickness = 1 b.Filled = false b.Visible = false local f = Drawing.new("Square") f.Thickness = 0 f.Filled = true f.Visible = false L.BFD[m] = f L.BOD[m] = o L.BD[m] = b end
 local function cH(m) 
     if L.HD[m] then return end 
@@ -1185,6 +1206,7 @@ local function rHE(m, rm, type)
     if espCache[m] then return end
     espCache[m] = {to = m, fA = 0, sS = true, type = type or "Players"}
     cN(m) cW(m) cD(m) cB1(m) cH(m) 
+    if (type or "Players") == "Players" then cBty(m) end
     if L[(type == "NPCs" and "NPC_" or (type == "Animals" and "Animal_" or "")) .. "CE"] then aC(m, type == "NPCs" and "NPC_" or (type == "Animals" and "Animal_" or "")) end
 end
 local ESPPreview = { Enabled = false, UserMoved = false, Container = nil, MainFrame = nil, stickyUpdating = false }
@@ -1207,14 +1229,14 @@ function ESPPreview:UpdateAesthetics()
     Main.Visible = PreviewEnabled
     
     if PreviewEnabled and self.DummyBox then
-        local font = Enum.Font.BuilderSans
+        local fontMap = { [0] = Enum.Font.BuilderSans, [1] = Enum.Font.SourceSans, [2] = Enum.Font.Roboto, [3] = Enum.Font.Code }
+        local font = fontMap[L.Font or 3] or Enum.Font.BuilderSans
         local fontSize = L.FS or 13
         local case = L.FCase or "Normal"
-        local function applyCase(str)
-            if case == "Uppercase" then return M.upper(str)
-            elseif case == "Lowercase" then return M.lower(str)
-            end
-            return str
+        local function applyCase(t)
+            if not t or typeof(t) ~= "string" then return tostring(t or "") end
+            if case == "Lowercase" then return string.lower(t) elseif case == "Uppercase" then return string.upper(t) end
+            return (string.lower(t):gsub("^%l", string.upper):gsub("[%s%p]%l", string.upper))
         end
 
         -- Box & Outlines (UIStroke)
@@ -1234,7 +1256,7 @@ function ESPPreview:UpdateAesthetics()
         self.DummyWeapon.Visible = L.WE
         self.DummyWeapon.TextColor3 = typeof(L.WTC) == "Color3" and L.WTC or Color3.new(1,1,1)
         self.DummyWeapon.Font = font
-        self.DummyWeapon.TextSize = fontSize - 2
+        self.DummyWeapon.TextSize = fontSize
         self.DummyWeapon.Text = applyCase("Winchester")
         
         local dUnit = L.DistMode == "Meters" and "m" or "s"
@@ -1242,7 +1264,7 @@ function ESPPreview:UpdateAesthetics()
         self.DummyDist.Visible = L.DE
         self.DummyDist.TextColor3 = typeof(L.DTC) == "Color3" and L.DTC or Color3.new(1,1,1)
         self.DummyDist.Font = font
-        self.DummyDist.TextSize = fontSize - 2
+        self.DummyDist.TextSize = fontSize
         self.DummyDist.Text = applyCase(dVal .. dUnit)
         
         if L.WE then
@@ -1275,7 +1297,7 @@ function ESPPreview:UpdateAesthetics()
         self.DummyHealthText.Position = UDim2.new(0, -22, 1 - health, -6)
         self.DummyHealthText.TextColor3 = typeof(L.HTC) == "Color3" and L.HTC or Color3.new(1,1,1)
         self.DummyHealthText.Font = font
-        self.DummyHealthText.TextSize = fontSize - 2
+        self.DummyHealthText.TextSize = fontSize
         
         self.DummyHealthSolid.Visible = true
         self.DummyHealthSolid.Size = UDim2.new(1, 0, health, 0)
@@ -1311,6 +1333,12 @@ function ESPPreview:UpdateAesthetics()
             local mainHColor = hlc:Lerp(hhc, health)
             self.DummyHealthGradient.Color = ColorSequence.new(mainHColor)
         end
+        self.DummyBounty.Visible = L.BountyE
+        self.DummyBounty.TextColor3 = typeof(L.BountyTC) == "Color3" and L.BountyTC or Color3.new(1,1,1)
+        self.DummyBounty.Font = font
+        self.DummyBounty.TextSize = fontSize
+        self.DummyBounty.Text = applyCase("$100")
+        self.DummyBounty.Position = UDim2.new(0.5, 49, 0.5, -70) -- Match box top right
     end
 end
 
@@ -1388,6 +1416,10 @@ function ESPPreview:Create()
     local HealthTextStroke = Instance.new("UIStroke"); HealthTextStroke.Thickness = 1; HealthTextStroke.Color = Color3.new(0,0,0); HealthTextStroke.LineJoinMode = Enum.LineJoinMode.Miter; HealthTextStroke.Parent = HealthText
     self.DummyHealthText = HealthText
 
+    local Bounty = Instance.new("TextLabel"); Bounty.Name = "DummyBounty"; Bounty.BackgroundTransparency = 1; Bounty.Position = UDim2.new(0.5, 49, 0.5, -70); Bounty.Size = UDim2.fromOffset(40, 12); Bounty.Font = bFont; Bounty.Text = "$100"; Bounty.TextSize = 13; Bounty.TextXAlignment = Enum.TextXAlignment.Left; Bounty.ZIndex = 11; Bounty.Parent = InnerContainer
+    local BountyStroke = Instance.new("UIStroke"); BountyStroke.Thickness = 1; BountyStroke.Color = Color3.new(0,0,0); BountyStroke.LineJoinMode = Enum.LineJoinMode.Miter; BountyStroke.Parent = Bounty
+    self.DummyBounty = Bounty
+
 
     
     self.Glow = Glow
@@ -1409,7 +1441,7 @@ function ESPPreview:Create()
             if not self.UserMoved then
                 self.stickyUpdating = true
                 local pos = Library.MainOuterFrame.AbsolutePosition
-                Main.Position = UDim2.new(0, pos.X - 215, 0, pos.Y)
+                Main.Position = UDim2.new(0, pos.X - 215, 0, pos.Y + 3)
                 self.stickyUpdating = false
             end
             self:UpdateAesthetics()
@@ -1538,6 +1570,11 @@ local function setupESP(tab, prefix, hideSkeleton, isAnimal)
         D_HealthGrad:AddDropdown(prefix .. 'HealthGradientType', {Values = {'Pulsing Glow', 'Wave Bounce'}, Default = 1, Multi = false, Text = 'Mode', Callback = function(v) L[prefix .. "HGR_Type"] = v end})
         D_HealthGrad:AddSlider(prefix .. "HealthGradientRotationSpeed", {Text = "Speed", Default = 4, Min = 0.1, Max = 10, Rounding = 1, Compact = true, Callback = function(v) L[prefix .. "HGRS"] = v end})
     end
+    if prefix == "" then
+        local D_Bty = tab:AddDependencyBox(); D_Bty:SetupDependencies({{ME, true}})
+        local BtyTgl = D_Bty:AddToggle('BountyESP', {Text = 'Bounty', Default = false, Callback = function(v) L.BountyE = v end})
+        BtyTgl:AddColorPicker('BountyESPCP', {Default = L.BountyTC or Color3.new(1, 1, 1), Title = "Color", Callback = function(v) L.BountyTC = v end})
+    end
     local D_Dist = tab:AddDependencyBox(); D_Dist:SetupDependencies({{ME, true}})
     local CE2 = D_Dist:AddToggle(prefix .. 'DistanceESP', {Text = 'Distance', Default = false, Callback = function(v) L[prefix .. "DE"] = v end})
     CE2:AddColorPicker(prefix .. "DistanceESPCP", {Default = L[prefix .. "DTC"], Title = "Color", Callback = function(v) L[prefix .. "DTC"] = v end})
@@ -1569,55 +1606,56 @@ local ESP_Tabbox = Tabs.Visuals:AddLeftTabbox()
 setupESP(ESP_Tabbox:AddTab("Players"), "")
 setupESP(ESP_Tabbox:AddTab("NPCs"), "NPC_", true)
 setupESP(ESP_Tabbox:AddTab("Animals"), "Animal_", true, true)
-local DroppedItems_Tabbox = Tabs.Visuals:AddRightTabbox("Dropped Items & Thunderstruck")
-local DroppedItems_Group = DroppedItems_Tabbox:AddTab("Dropped Items")
-local Thunderstruck_Group = DroppedItems_Tabbox:AddTab("Thunderstruck")
-local Ores_Group = DroppedItems_Tabbox:AddTab("Ores")
+local UI_Elements = {}
+UI_Elements.DroppedItems_Tabbox = Tabs.Visuals:AddRightTabbox("Dropped Items & Thunderstruck")
+UI_Elements.DroppedItems_Group = UI_Elements.DroppedItems_Tabbox:AddTab("Dropped Items")
+UI_Elements.Thunderstruck_Group = UI_Elements.DroppedItems_Tabbox:AddTab("Thunderstruck")
+UI_Elements.Ores_Group = UI_Elements.DroppedItems_Tabbox:AddTab("Ores")
 
-local DI_Master = DroppedItems_Group:AddToggle("DI_Enabled", {Text = "Enable ESP", Default = false, Callback = function(v) L.DI_Enabled = v end})
-local DI_Dep1 = DroppedItems_Group:AddDependencyBox(); DI_Dep1:SetupDependencies({{DI_Master, true}})
-local DI_NameToggle = DI_Dep1:AddToggle("DI_Name", {Text = "Name", Default = false, Callback = function(v) L.DI_Name = v end})
-DI_NameToggle:AddColorPicker("DI_NameColor", {Default = L.DI_NameColor, Title = "Name Color", Callback = function(c) L.DI_NameColor = c end})
-local DI_DistToggle = DI_Dep1:AddToggle("DI_Distance", {Text = "Distance", Default = false, Callback = function(v) L.DI_Distance = v end})
-DI_DistToggle:AddColorPicker("DI_DistanceColor", {Default = L.DI_DistanceColor, Title = "Distance Color", Callback = function(c) L.DI_DistanceColor = c end})
-local DI_DistDep = DroppedItems_Group:AddDependencyBox(); DI_DistDep:SetupDependencies({{DI_Master, true}, {DI_DistToggle, true}})
-DI_DistDep:AddDropdown("DI_Measuring", {Values = {"Meters", "Studs"}, Default = 2, Text = "Measuring", Callback = function(v) L.DI_Measuring = v end})
-local DI_Dep2 = DroppedItems_Group:AddDependencyBox(); DI_Dep2:SetupDependencies({{DI_Master, true}})
-DI_Dep2:AddDropdown("DI_Sort", {Values = {"Ore", "Gems", "Animal Drops", "Others"}, Default = {"Ore", "Gems", "Animal Drops", "Others"}, Multi = true, Text = "Item Sort", Callback = function(v) L.DI_Sort = v end})
-DI_Dep2:AddDivider()
-DI_Dep2:AddToggle("DI_LegendaryOverride", {Text = "Legendary Color Override", Default = true, Callback = function(v) L.DI_LegendaryOverride = v end}):AddColorPicker("DI_LegendaryColor", {Default = L.DI_LegendaryColor, Title = "Legendary Color", Callback = function(c) L.DI_LegendaryColor = c end})
-DI_Dep2:AddDropdown('DI_FontType', {Values = {'UI', 'System', 'Plex', 'Monospace'}, Default = 3, Multi = false, Text = 'Font Type', Callback = function(v) L.DI_Font = FM[v] or 2 end})
-DI_Dep2:AddDropdown('DI_FontCase', {Values = {'Normal', 'Lowercase', 'Uppercase'}, Default = 1, Multi = false, Text = 'Font Case', Callback = function(v) L.DI_FontCase = v end})
-DI_Dep2:AddSlider("DI_FontSize", {Text = "Font Size", Default = 13, Min = 8, Max = 24, Rounding = 0, Compact = true, Callback = function(v) L.DI_FontSize = math.floor(v) end})
-DI_Dep2:AddSlider("DI_MaxDistance", {Text = "Max Distance", Default = 10000, Min = 0, Max = 10000, Rounding = 0, Compact = true, Callback = function(v) L.DI_MaxDistance = v end})
+UI_Elements.DI_Master = UI_Elements.DroppedItems_Group:AddToggle("DI_Enabled", {Text = "Enable ESP", Default = false, Callback = function(v) L.DI_Enabled = v end})
+UI_Elements.DI_Dep1 = UI_Elements.DroppedItems_Group:AddDependencyBox(); UI_Elements.DI_Dep1:SetupDependencies({{UI_Elements.DI_Master, true}})
+UI_Elements.DI_NameToggle = UI_Elements.DI_Dep1:AddToggle("DI_Name", {Text = "Name", Default = false, Callback = function(v) L.DI_Name = v end})
+UI_Elements.DI_NameToggle:AddColorPicker("DI_NameColor", {Default = L.DI_NameColor, Title = "Name Color", Callback = function(c) L.DI_NameColor = c end})
+UI_Elements.DI_DistToggle = UI_Elements.DI_Dep1:AddToggle("DI_Distance", {Text = "Distance", Default = false, Callback = function(v) L.DI_Distance = v end})
+UI_Elements.DI_DistToggle:AddColorPicker("DI_DistanceColor", {Default = L.DI_DistanceColor, Title = "Distance Color", Callback = function(c) L.DI_DistanceColor = c end})
+UI_Elements.DI_DistDep = UI_Elements.DroppedItems_Group:AddDependencyBox(); UI_Elements.DI_DistDep:SetupDependencies({{UI_Elements.DI_Master, true}, {UI_Elements.DI_DistToggle, true}})
+UI_Elements.DI_DistDep:AddDropdown("DI_Measuring", {Values = {"Meters", "Studs"}, Default = 2, Text = "Measuring", Callback = function(v) L.DI_Measuring = v end})
+UI_Elements.DI_Dep2 = UI_Elements.DroppedItems_Group:AddDependencyBox(); UI_Elements.DI_Dep2:SetupDependencies({{UI_Elements.DI_Master, true}})
+UI_Elements.DI_Dep2:AddDropdown("DI_Sort", {Values = {"Ore", "Gems", "Animal Drops", "Others"}, Default = {"Ore", "Gems", "Animal Drops", "Others"}, Multi = true, Text = "Item Sort", Callback = function(v) L.DI_Sort = v end})
+UI_Elements.DI_Dep2:AddDivider()
+UI_Elements.DI_Dep2:AddToggle("DI_LegendaryOverride", {Text = "Legendary Color Override", Default = true, Callback = function(v) L.DI_LegendaryOverride = v end}):AddColorPicker("DI_LegendaryColor", {Default = L.DI_LegendaryColor, Title = "Legendary Color", Callback = function(c) L.DI_LegendaryColor = c end})
+UI_Elements.DI_Dep2:AddDropdown('DI_FontType', {Values = {'UI', 'System', 'Plex', 'Monospace'}, Default = 3, Multi = false, Text = 'Font Type', Callback = function(v) L.DI_Font = FM[v] or 2 end})
+UI_Elements.DI_Dep2:AddDropdown('DI_FontCase', {Values = {'Normal', 'Lowercase', 'Uppercase'}, Default = 1, Multi = false, Text = 'Font Case', Callback = function(v) L.DI_FontCase = v end})
+UI_Elements.DI_Dep2:AddSlider("DI_FontSize", {Text = "Font Size", Default = 13, Min = 8, Max = 24, Rounding = 0, Compact = true, Callback = function(v) L.DI_FontSize = math.floor(v) end})
+UI_Elements.DI_Dep2:AddSlider("DI_MaxDistance", {Text = "Max Distance", Default = 10000, Min = 0, Max = 10000, Rounding = 0, Compact = true, Callback = function(v) L.DI_MaxDistance = v end})
 
-local TS_Master = Thunderstruck_Group:AddToggle("TS_Enabled", {Text = "Enable ESP", Default = false, Callback = function(v) L.TS_Enabled = v end})
-local TS_Dep1 = Thunderstruck_Group:AddDependencyBox(); TS_Dep1:SetupDependencies({{TS_Master, true}})
-local TS_NameToggle = TS_Dep1:AddToggle("TS_Name", {Text = "Name", Default = false, Callback = function(v) L.TS_Name = v end})
-TS_NameToggle:AddColorPicker("TS_NameColor", {Default = Color3.fromRGB(255, 0, 0), Title = "Name Color", Callback = function(c) L.TS_NameColor = c end})
-local TS_DistToggle = TS_Dep1:AddToggle("TS_Distance", {Text = "Distance", Default = false, Callback = function(v) L.TS_Distance = v end})
-TS_DistToggle:AddColorPicker("TS_DistanceColor", {Default = Color3.fromRGB(255, 255, 255), Title = "Distance Color", Callback = function(c) L.TS_DistanceColor = c end})
-local TS_DistDep = Thunderstruck_Group:AddDependencyBox(); TS_DistDep:SetupDependencies({{TS_Master, true}, {TS_DistToggle, true}})
-TS_DistDep:AddDropdown("TS_Measuring", {Values = {"Meters", "Studs"}, Default = 2, Text = "Measuring", Callback = function(v) L.TS_Measuring = v end})
-local TS_Dep1_Bottom = Thunderstruck_Group:AddDependencyBox(); TS_Dep1_Bottom:SetupDependencies({{TS_Master, true}})
-TS_Dep1_Bottom:AddDropdown("TS_Sort", {Values = {"Tree", "Cactus"}, Default = {"Tree", "Cactus"}, Multi = true, Text = "Thunderstruck Sort", Callback = function(v) L.TS_Sort = v end})
-local TS_Dep2 = Thunderstruck_Group:AddDependencyBox(); TS_Dep2:SetupDependencies({{TS_Master, true}})
-TS_Dep2:AddDivider()
-TS_Dep2:AddToggle("TS_Notify", {Text = "Notify On Thunderstruck", Default = false, Tooltip = "Enables notifications for newly discovered Thunderstruck entities.", Callback = function(v) L.TS_Notify = v end})
-TS_Dep2:AddDropdown('TS_FontType', {Values = {'UI', 'System', 'Plex', 'Monospace'}, Default = 3, Multi = false, Text = 'Font Type', Callback = function(v) L.TS_Font = FM[v] or 2 end})
-TS_Dep2:AddDropdown('TS_FontCase', {Values = {'Normal', 'Lowercase', 'Uppercase'}, Default = 1, Multi = false, Text = 'Font Case', Callback = function(v) L.TS_FontCase = v end})
-TS_Dep2:AddSlider("TS_FontSize", {Text = "Font Size", Default = 13, Min = 8, Max = 24, Rounding = 0, Compact = true, Callback = function(v) L.TS_FontSize = math.floor(v) end})
-TS_Dep2:AddSlider("TS_MaxDistance", {Text = "Max Distance", Default = 10000, Min = 0, Max = 10000, Rounding = 0, Compact = true, Callback = function(v) L.TS_MaxDistance = v end})
+UI_Elements.TS_Master = UI_Elements.Thunderstruck_Group:AddToggle("TS_Enabled", {Text = "Enable ESP", Default = false, Callback = function(v) L.TS_Enabled = v end})
+UI_Elements.TS_Dep1 = UI_Elements.Thunderstruck_Group:AddDependencyBox(); UI_Elements.TS_Dep1:SetupDependencies({{UI_Elements.TS_Master, true}})
+UI_Elements.TS_NameToggle = UI_Elements.TS_Dep1:AddToggle("TS_Name", {Text = "Name", Default = false, Callback = function(v) L.TS_Name = v end})
+UI_Elements.TS_NameToggle:AddColorPicker("TS_NameColor", {Default = Color3.fromRGB(255, 0, 0), Title = "Name Color", Callback = function(c) L.TS_NameColor = c end})
+UI_Elements.TS_DistToggle = UI_Elements.TS_Dep1:AddToggle("TS_Distance", {Text = "Distance", Default = false, Callback = function(v) L.TS_Distance = v end})
+UI_Elements.TS_DistToggle:AddColorPicker("TS_DistanceColor", {Default = Color3.fromRGB(255, 255, 255), Title = "Distance Color", Callback = function(c) L.TS_DistanceColor = c end})
+UI_Elements.TS_DistDep = UI_Elements.Thunderstruck_Group:AddDependencyBox(); UI_Elements.TS_DistDep:SetupDependencies({{UI_Elements.TS_Master, true}, {UI_Elements.TS_DistToggle, true}})
+UI_Elements.TS_DistDep:AddDropdown("TS_Measuring", {Values = {"Meters", "Studs"}, Default = 2, Text = "Measuring", Callback = function(v) L.TS_Measuring = v end})
+UI_Elements.TS_Dep1_Bottom = UI_Elements.Thunderstruck_Group:AddDependencyBox(); UI_Elements.TS_Dep1_Bottom:SetupDependencies({{UI_Elements.TS_Master, true}})
+UI_Elements.TS_Dep1_Bottom:AddDropdown("TS_Sort", {Values = {"Tree", "Cactus"}, Default = {"Tree", "Cactus"}, Multi = true, Text = "Thunderstruck Sort", Callback = function(v) L.TS_Sort = v end})
+UI_Elements.TS_Dep2 = UI_Elements.Thunderstruck_Group:AddDependencyBox(); UI_Elements.TS_Dep2:SetupDependencies({{UI_Elements.TS_Master, true}})
+UI_Elements.TS_Dep2:AddDivider()
+UI_Elements.TS_Dep2:AddToggle("TS_Notify", {Text = "Notify On Thunderstruck", Default = false, Tooltip = "Enables notifications for newly discovered Thunderstruck entities.", Callback = function(v) L.TS_Notify = v end})
+UI_Elements.TS_Dep2:AddDropdown('TS_FontType', {Values = {'UI', 'System', 'Plex', 'Monospace'}, Default = 3, Multi = false, Text = 'Font Type', Callback = function(v) L.TS_Font = FM[v] or 2 end})
+UI_Elements.TS_Dep2:AddDropdown('TS_FontCase', {Values = {'Normal', 'Lowercase', 'Uppercase'}, Default = 1, Multi = false, Text = 'Font Case', Callback = function(v) L.TS_FontCase = v end})
+UI_Elements.TS_Dep2:AddSlider("TS_FontSize", {Text = "Font Size", Default = 13, Min = 8, Max = 24, Rounding = 0, Compact = true, Callback = function(v) L.TS_FontSize = math.floor(v) end})
+UI_Elements.TS_Dep2:AddSlider("TS_MaxDistance", {Text = "Max Distance", Default = 10000, Min = 0, Max = 10000, Rounding = 0, Compact = true, Callback = function(v) L.TS_MaxDistance = v end})
 
 L.Ore_Name = true
-local Ore_Master = Ores_Group:AddToggle("Ore_Enabled", {Text = "Enable ESP", Default = false, Callback = function(v) L.Ore_Enabled = v end})
-local Ore_Dep1 = Ores_Group:AddDependencyBox(); Ore_Dep1:SetupDependencies({{Ore_Master, true}})
-Ore_Dep1:AddToggle("Ore_Name", {Text = "Name", Default = true, Callback = function(v) L.Ore_Name = v end})
-local Ore_DistToggle = Ore_Dep1:AddToggle("Ore_Distance", {Text = "Distance", Default = false, Callback = function(v) L.Ore_Distance = v end})
-Ore_DistToggle:AddColorPicker("Ore_DistanceColor", {Default = Color3.new(1, 1, 1), Title = "Distance Color", Callback = function(c) L.Ore_DistanceColor = c end})
-local Ore_DistDep = Ores_Group:AddDependencyBox(); Ore_DistDep:SetupDependencies({{Ore_Master, true}, {Ore_DistToggle, true}})
-Ore_DistDep:AddDropdown("Ore_Measuring", {Values = {"Meters", "Studs"}, Default = 2, Text = "Measuring", Callback = function(v) L.Ore_Measuring = v end})
-local Ore_Dep2 = Ores_Group:AddDependencyBox(); Ore_Dep2:SetupDependencies({{Ore_Master, true}})
+UI_Elements.Ore_Master = UI_Elements.Ores_Group:AddToggle("Ore_Enabled", {Text = "Enable ESP", Default = false, Callback = function(v) L.Ore_Enabled = v end})
+UI_Elements.Ore_Dep1 = UI_Elements.Ores_Group:AddDependencyBox(); UI_Elements.Ore_Dep1:SetupDependencies({{UI_Elements.Ore_Master, true}})
+UI_Elements.Ore_Dep1:AddToggle("Ore_Name", {Text = "Name", Default = true, Callback = function(v) L.Ore_Name = v end})
+UI_Elements.Ore_DistToggle = UI_Elements.Ore_Dep1:AddToggle("Ore_Distance", {Text = "Distance", Default = false, Callback = function(v) L.Ore_Distance = v end})
+UI_Elements.Ore_DistToggle:AddColorPicker("Ore_DistanceColor", {Default = Color3.new(1, 1, 1), Title = "Distance Color", Callback = function(c) L.Ore_DistanceColor = c end})
+UI_Elements.Ore_DistDep = UI_Elements.Ores_Group:AddDependencyBox(); UI_Elements.Ore_DistDep:SetupDependencies({{UI_Elements.Ore_Master, true}, {UI_Elements.Ore_DistToggle, true}})
+UI_Elements.Ore_DistDep:AddDropdown("Ore_Measuring", {Values = {"Meters", "Studs"}, Default = 2, Text = "Measuring", Callback = function(v) L.Ore_Measuring = v end})
+UI_Elements.Ore_Dep2 = UI_Elements.Ores_Group:AddDependencyBox(); UI_Elements.Ore_Dep2:SetupDependencies({{UI_Elements.Ore_Master, true}})
 local OresList = {
     {Name = "Coal", Color = Color3.fromRGB(80, 80, 80)},
     {Name = "Copper", Color = Color3.fromRGB(184, 115, 51)},
@@ -1630,92 +1668,86 @@ local OresList = {
 L.Ore_Settings = {}
 for _, ore in ipairs(OresList) do
     L.Ore_Settings[ore.Name] = {Enabled = false, Color = ore.Color}
-    local t = Ore_Dep2:AddToggle("Ore_" .. ore.Name, {Text = ore.Name, Default = false, Callback = function(v) L.Ore_Settings[ore.Name].Enabled = v end})
+    local t = UI_Elements.Ore_Dep2:AddToggle("Ore_" .. ore.Name, {Text = ore.Name, Default = false, Callback = function(v) L.Ore_Settings[ore.Name].Enabled = v end})
     t:AddColorPicker("Ore_Color_" .. ore.Name, {Default = ore.Color, Title = ore.Name .. " Color", Callback = function(c) L.Ore_Settings[ore.Name].Color = c end})
 end
-Ore_Dep2:AddDivider()
-Ore_Dep2:AddToggle("Ore_OnlyVeins", {Text = "Only Show Veins", Default = false, Callback = function(v) L.Ore_OnlyVeins = v end})
-Ore_Dep2:AddDropdown('Ore_FontType', {Values = {'UI', 'System', 'Plex', 'Monospace'}, Default = 3, Multi = false, Text = 'Font Type', Callback = function(v) L.Ore_Font = FM[v] or 2 end})
-Ore_Dep2:AddDropdown('Ore_FontCase', {Values = {'Normal', 'Lowercase', 'Uppercase'}, Default = 1, Multi = false, Text = 'Font Case', Callback = function(v) L.Ore_FontCase = v end})
-Ore_Dep2:AddSlider("Ore_FontSize", {Text = "Font Size", Default = 13, Min = 8, Max = 24, Rounding = 0, Compact = true, Callback = function(v) L.Ore_FontSize = math.floor(v) end})
-Ore_Dep2:AddSlider("Ore_MaxDistance", {Text = "Max Distance", Default = 10000, Min = 0, Max = 10000, Rounding = 0, Compact = true, Callback = function(v) L.Ore_MaxDistance = v end})
-local Local_Group = Tabs.Visuals:AddRightGroupbox("Local")
-local LG_Toggle = Local_Group:AddToggle("LG_Enabled", {Text = "Local Gun Chams", Default = false, Callback = function(v) L.LG_Enabled = v end})
-LG_Toggle:AddColorPicker("LG_Color", {Default = L.LG_Color, Transparency = 0, Title = "Color", Callback = function(c, t) 
+UI_Elements.Ore_Dep2:AddDivider()
+UI_Elements.Ore_Dep2:AddToggle("Ore_OnlyVeins", {Text = "Only Show Veins", Default = false, Callback = function(v) L.Ore_OnlyVeins = v end})
+UI_Elements.Ore_Dep2:AddDropdown('Ore_FontType', {Values = {'UI', 'System', 'Plex', 'Monospace'}, Default = 3, Multi = false, Text = 'Font Type', Callback = function(v) L.Ore_Font = FM[v] or 2 end})
+UI_Elements.Ore_Dep2:AddDropdown('Ore_FontCase', {Values = {'Normal', 'Lowercase', 'Uppercase'}, Default = 1, Multi = false, Text = 'Font Case', Callback = function(v) L.Ore_FontCase = v end})
+UI_Elements.Ore_Dep2:AddSlider("Ore_FontSize", {Text = "Font Size", Default = 13, Min = 8, Max = 24, Rounding = 0, Compact = true, Callback = function(v) L.Ore_FontSize = math.floor(v) end})
+UI_Elements.Ore_Dep2:AddSlider("Ore_MaxDistance", {Text = "Max Distance", Default = 10000, Min = 0, Max = 10000, Rounding = 0, Compact = true, Callback = function(v) L.Ore_MaxDistance = v end})
+
+UI_Elements.Extra_Tab = ESP_Tabbox:AddTab("Extra")
+UI_Elements.Extra_Tab:AddToggle("HideProtected", {Text = "Hide Protected", Default = false, Tooltip = "Hides protected players esp.", Callback = function(v) L.HideProtected = v end})
+UI_Elements.Extra_Tab:AddToggle("VisOnly", {Text = "Only Show When Visible", Default = false, Tooltip = "Only shows ESP for visible players/npcs/animals.", Callback = function(v) L.VisOnly = v end})
+UI_Elements.Extra_Tab:AddDivider()
+UI_Elements.Extra_Tab:AddToggle("OverwriteDuelOpponent", {Text = "Overwrite Duel Opponent", Default = true, Tooltip = "Overwrites the ESP color for current duel opponent.", Callback = function(v) L.OverwriteDuelOpponent = v end}):AddColorPicker("OverwriteDuelColor", {Default = Color3.fromRGB(255, 240, 108), Title = "Color", Callback = function(c) L.OverwriteDuelColor = c end})
+UI_Elements.Extra_Tab:AddToggle("OverwritePriority", {Text = "Overwrite Priority Color", Default = true, Callback = function(v) L.PE = v; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end}):AddColorPicker("OverwritePriorityCP", {Default = Color3.fromRGB(255, 0, 0), Title = "Priority Color", Callback = function(c) L.PCOC = c; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end})
+UI_Elements.Extra_Tab:AddToggle("OverwriteFriendly", {Text = "Overwrite Friendly Color", Default = true, Callback = function(v) L.FE = v; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end}):AddColorPicker("OverwriteFriendlyCP", {Default = Color3.fromRGB(0, 255, 0), Title = "Friendly Color", Callback = function(c) L.FCOC = c; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end})
+UI_Elements.Extra_Tab:AddSlider("FadeInTime", {Text = "Fade In", Default = 0.15, Min = 0.05, Max = 2, Rounding = 2, Compact = true, Callback = function(v) L.FIn = v end})
+UI_Elements.Extra_Tab:AddSlider("FadeOutTime", {Text = "Fade Out", Default = 0.15, Min = 0.05, Max = 2, Rounding = 2, Compact = true, Callback = function(v) L.FOut = v end})
+UI_Elements.Local_Group = Tabs.Visuals:AddLeftGroupbox("Local")
+UI_Elements.LG_Toggle = UI_Elements.Local_Group:AddToggle("LG_Enabled", {Text = "Local Gun Chams", Default = false, Callback = function(v) L.LG_Enabled = v end})
+UI_Elements.LG_Toggle:AddColorPicker("LG_Color", {Default = L.LG_Color, Transparency = 0, Title = "Color", Callback = function(c, t) 
     L.LG_Color = c
     L.LG_Trans = t
 end})
-local LG_Dep = Local_Group:AddDependencyBox(); LG_Dep:SetupDependencies({{LG_Toggle, true}})
-LG_Dep:AddDropdown("LG_Mat", {Values = {"ForceField", "Neon", "Plastic", "Glass", "SmoothPlastic"}, Default = 1, Text = "Chams Material", Callback = function(v) L.LG_Mat = v end})
-local LG_FF_Dep = Local_Group:AddDependencyBox(); LG_FF_Dep:SetupDependencies({{LG_Toggle, true}})
-LG_FF_Dep:AddDropdown("LG_FFAnim", {Values = {"None", "Breathe", "Spectral", "Ethereal", "Vivid", "Glint", "Lustre"}, Default = 1, Text = "Forcefield Animation", Callback = function(v) L.LG_FFAnim = v end})
-
-Local_Group:AddToggle("LG_HideHolsters", {Text = "Hide Local Holsters", Default = false, Callback = function(v) L.LG_HideHolsters = v end})
-Local_Group:AddToggle("LG_HideGuns", {Text = "Hide Local Guns", Default = false, Callback = function(v) L.LG_HideGuns = v end})
-
-Local_Group:AddDivider()
-
-local LC_Toggle = Local_Group:AddToggle("LC_Enabled", {Text = "Local Character Chams", Default = false, Callback = function(v) L.LC_Enabled = v end})
-LC_Toggle:AddColorPicker("LC_Color", {Default = L.LC_Color, Transparency = 0, Title = "Color", Callback = function(c, t) 
+UI_Elements.LG_Dep = UI_Elements.Local_Group:AddDependencyBox(); UI_Elements.LG_Dep:SetupDependencies({{UI_Elements.LG_Toggle, true}})
+UI_Elements.LG_Dep:AddDropdown("LG_Mat", {Values = {"ForceField", "Neon", "Plastic", "Glass", "SmoothPlastic"}, Default = 1, Text = "Chams Material", Callback = function(v) L.LG_Mat = v end})
+UI_Elements.LG_FF_Dep = UI_Elements.Local_Group:AddDependencyBox(); UI_Elements.LG_FF_Dep:SetupDependencies({{UI_Elements.LG_Toggle, true}})
+UI_Elements.LG_FF_Dep:AddDropdown("LG_FFAnim", {Values = {"None", "Breathe", "Spectral", "Ethereal", "Vivid", "Glint", "Lustre"}, Default = 1, Text = "Forcefield Animation", Callback = function(v) L.LG_FFAnim = v end})
+UI_Elements.Local_Group:AddToggle("LG_HideHolsters", {Text = "Hide Local Holsters", Default = false, Callback = function(v) L.LG_HideHolsters = v end})
+UI_Elements.Local_Group:AddToggle("LG_HideGuns", {Text = "Hide Local Guns", Default = false, Callback = function(v) L.LG_HideGuns = v end})
+UI_Elements.Local_Group:AddDivider()
+UI_Elements.LC_Toggle = UI_Elements.Local_Group:AddToggle("LC_Enabled", {Text = "Local Character Chams", Default = false, Callback = function(v) L.LC_Enabled = v end})
+UI_Elements.LC_Toggle:AddColorPicker("LC_Color", {Default = L.LC_Color, Transparency = 0, Title = "Color", Callback = function(c, t) 
     L.LC_Color = c
     L.LC_Trans = t
 end})
-
-local LC_Dep = Local_Group:AddDependencyBox(); LC_Dep:SetupDependencies({{LC_Toggle, true}})
-LC_Dep:AddDropdown("LC_Mat", {Values = {"ForceField", "Neon", "Plastic", "Glass", "SmoothPlastic"}, Default = 1, Text = "Chams Material", Callback = function(v) L.LC_Mat = v end})
-LC_Dep:AddDropdown("LC_FFAnim", {Values = {"None", "Breathe", "Spectral", "Ethereal", "Vivid", "Glint", "Lustre"}, Default = 1, Text = "Forcefield Animation", Callback = function(v) L.LC_FFAnim = v end})
-
-Local_Group:AddDivider()
-
-local LH_Toggle = Local_Group:AddToggle("LH_Enabled", {Text = "Local Horse Chams", Default = false, Callback = function(v) L.LH_Enabled = v end})
-LH_Toggle:AddColorPicker("LH_Color", {Default = L.LH_Color, Transparency = 0, Title = "Color", Callback = function(c, t) 
+UI_Elements.LC_Dep = UI_Elements.Local_Group:AddDependencyBox(); UI_Elements.LC_Dep:SetupDependencies({{UI_Elements.LC_Toggle, true}})
+UI_Elements.LC_Dep:AddDropdown("LC_Mat", {Values = {"ForceField", "Neon", "Plastic", "Glass", "SmoothPlastic"}, Default = 1, Text = "Chams Material", Callback = function(v) L.LC_Mat = v end})
+UI_Elements.LC_Dep:AddDropdown("LC_FFAnim", {Values = {"None", "Breathe", "Spectral", "Ethereal", "Vivid", "Glint", "Lustre"}, Default = 1, Text = "Forcefield Animation", Callback = function(v) L.LG_FFAnim = v end})
+UI_Elements.Local_Group:AddDivider()
+UI_Elements.LH_Toggle = UI_Elements.Local_Group:AddToggle("LH_Enabled", {Text = "Local Horse Chams", Default = false, Callback = function(v) L.LH_Enabled = v end})
+UI_Elements.LH_Toggle:AddColorPicker("LH_Color", {Default = L.LH_Color, Transparency = 0, Title = "Color", Callback = function(c, t) 
     L.LH_Color = c
     L.LH_Trans = t
 end})
+UI_Elements.LH_Dep = UI_Elements.Local_Group:AddDependencyBox(); UI_Elements.LH_Dep:SetupDependencies({{UI_Elements.LH_Toggle, true}})
+UI_Elements.LH_Dep:AddDropdown("LH_Mat", {Values = {"ForceField", "Neon", "Plastic", "Glass", "SmoothPlastic"}, Default = 1, Text = "Chams Material", Callback = function(v) L.LH_Mat = v end})
+UI_Elements.LH_Dep:AddDropdown("LH_FFAnim", {Values = {"None", "Breathe", "Spectral", "Ethereal", "Vivid", "Glint", "Lustre"}, Default = 1, Text = "Forcefield Animation", Callback = function(v) L.LH_FFAnim = v end})
+UI_Elements.VisualsTracers = Tabs.Visuals:AddLeftGroupbox("Bullet Tracers")
+UI_Elements.LocalTracersToggle = UI_Elements.VisualsTracers:AddToggle("BulletTracers", {Text = "Local Bullet Tracers", Default = false, Tooltip = "Shows local tracer's.", Callback = function(v) L.BulletTracers = v end})
+UI_Elements.LocalTracersToggle:AddColorPicker("BulletTracersColor", {Default = Color3.fromRGB(136, 159, 255), Title = "Start Color", Callback = function(v) L.BulletTracersColor = v end})
+UI_Elements.LocalTracersToggle:AddColorPicker("BulletTracersColor2", {Default = Color3.fromRGB(255, 255, 255), Title = "End Color", Callback = function(v) L.BulletTracersColor2 = v end})
 
-local LH_Dep = Local_Group:AddDependencyBox(); LH_Dep:SetupDependencies({{LH_Toggle, true}})
-LH_Dep:AddDropdown("LH_Mat", {Values = {"ForceField", "Neon", "Plastic", "Glass", "SmoothPlastic"}, Default = 1, Text = "Chams Material", Callback = function(v) L.LH_Mat = v end})
-LH_Dep:AddDropdown("LH_FFAnim", {Values = {"None", "Breathe", "Spectral", "Ethereal", "Vivid", "Glint", "Lustre"}, Default = 1, Text = "Forcefield Animation", Callback = function(v) L.LH_FFAnim = v end})
-local Extra_Tab = ESP_Tabbox:AddTab("Extra")
-Extra_Tab:AddToggle("HideProtected", {Text = "Hide Protected", Default = false, Tooltip = "Hides protected players esp.", Callback = function(v) L.HideProtected = v end})
-Extra_Tab:AddToggle("VisOnly", {Text = "Only Show When Visible", Default = false, Tooltip = "Only shows ESP for visible players/npcs/animals.", Callback = function(v) L.VisOnly = v end})
-Extra_Tab:AddDivider()
-Extra_Tab:AddToggle("OverwriteDuelOpponent", {Text = "Overwrite Duel Opponent", Default = true, Tooltip = "Overwrites the ESP color for current duel opponent.", Callback = function(v) L.OverwriteDuelOpponent = v end}):AddColorPicker("OverwriteDuelColor", {Default = Color3.fromRGB(255, 240, 108), Title = "Color", Callback = function(c) L.OverwriteDuelColor = c end})
-Extra_Tab:AddToggle("OverwritePriority", {Text = "Overwrite Priority Color", Default = true, Callback = function(v) L.PE = v; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end}):AddColorPicker("OverwritePriorityCP", {Default = Color3.fromRGB(255, 0, 0), Title = "Priority Color", Callback = function(c) L.PCOC = c; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end})
-Extra_Tab:AddToggle("OverwriteFriendly", {Text = "Overwrite Friendly Color", Default = true, Callback = function(v) L.FE = v; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end}):AddColorPicker("OverwriteFriendlyCP", {Default = Color3.fromRGB(0, 255, 0), Title = "Friendly Color", Callback = function(c) L.FCOC = c; if Library.PlayerList and Library.PlayerList.RefreshColors then Library.PlayerList:RefreshColors() end end})
-Extra_Tab:AddSlider("FadeInTime", {Text = "Fade In", Default = 0.15, Min = 0.05, Max = 2, Rounding = 2, Compact = true, Callback = function(v) L.FIn = v end})
-Extra_Tab:AddSlider("FadeOutTime", {Text = "Fade Out", Default = 0.15, Min = 0.05, Max = 2, Rounding = 2, Compact = true, Callback = function(v) L.FOut = v end})
-local VisualsTracers = Tabs.Visuals:AddLeftGroupbox("Bullet Tracers")
-local LocalTracersToggle = VisualsTracers:AddToggle("BulletTracers", {Text = "Local Bullet Tracers", Default = false, Tooltip = "Shows local tracer's.", Callback = function(v) L.BulletTracers = v end})
-LocalTracersToggle:AddColorPicker("BulletTracersColor", {Default = Color3.fromRGB(136, 159, 255), Title = "Start Color", Callback = function(v) L.BulletTracersColor = v end})
-LocalTracersToggle:AddColorPicker("BulletTracersColor2", {Default = Color3.fromRGB(255, 255, 255), Title = "End Color", Callback = function(v) L.BulletTracersColor2 = v end})
+UI_Elements.LocalTracersDep = UI_Elements.VisualsTracers:AddDependencyBox()
+UI_Elements.LocalTracersDep:SetupDependencies({{UI_Elements.LocalTracersToggle, true}})
+UI_Elements.LocalTracersDep:AddSlider("BulletTracersSize", {Text = "Size", Default = 0.2, Min = 0.05, Max = 2.5, Rounding = 2, Compact = true, Callback = function(v) L.BulletTracersSize = v end})
+UI_Elements.LocalTracersDep:AddSlider("BulletTracersDuration", {Text = "Duration", Default = 1, Min = 0.1, Max = 5, Rounding = 1, Suffix = "s", Compact = true, Callback = function(v) L.BulletTracersDuration = v end})
+UI_Elements.LocalTracersDep:AddDropdown("BulletTracersStyle", {Values = {"None", "1", "2", "3", "4", "5"}, Default = "None", Multi = false, Text = "Style", Callback = function(v) L.BulletTracersStyle = v end})
 
-local LocalTracersDep = VisualsTracers:AddDependencyBox()
-LocalTracersDep:SetupDependencies({{LocalTracersToggle, true}})
-LocalTracersDep:AddSlider("BulletTracersSize", {Text = "Size", Default = 0.2, Min = 0.05, Max = 2.5, Rounding = 2, Compact = true, Callback = function(v) L.BulletTracersSize = v end})
-LocalTracersDep:AddSlider("BulletTracersDuration", {Text = "Duration", Default = 1, Min = 0.1, Max = 5, Rounding = 1, Suffix = "s", Compact = true, Callback = function(v) L.BulletTracersDuration = v end})
-LocalTracersDep:AddDropdown("BulletTracersStyle", {Values = {"None", "1", "2", "3", "4", "5"}, Default = "None", Multi = false, Text = "Style", Callback = function(v) L.BulletTracersStyle = v end})
+UI_Elements.VisualsTracers:AddDivider()
 
-VisualsTracers:AddDivider()
+UI_Elements.EnemyTracersToggle = UI_Elements.VisualsTracers:AddToggle("EnemyBulletTracers", {Text = "Enemy Bullet Tracers", Default = false, Tooltip = "Shows other player's tracers.", Callback = function(v) L.EnemyBulletTracers = v end})
+UI_Elements.EnemyTracersToggle:AddColorPicker("EnemyBulletTracersColor", {Default = Color3.fromRGB(118, 52, 52), Title = "Start Color", Callback = function(v) L.EnemyBulletTracersColor = v end})
+UI_Elements.EnemyTracersToggle:AddColorPicker("EnemyBulletTracersColor2", {Default = Color3.fromRGB(255, 255, 255), Title = "End Color", Callback = function(v) L.EnemyBulletTracersColor2 = v end})
 
-local EnemyTracersToggle = VisualsTracers:AddToggle("EnemyBulletTracers", {Text = "Enemy Bullet Tracers", Default = false, Tooltip = "Shows other player's tracers.", Callback = function(v) L.EnemyBulletTracers = v end})
-EnemyTracersToggle:AddColorPicker("EnemyBulletTracersColor", {Default = Color3.fromRGB(118, 52, 52), Title = "Start Color", Callback = function(v) L.EnemyBulletTracersColor = v end})
-EnemyTracersToggle:AddColorPicker("EnemyBulletTracersColor2", {Default = Color3.fromRGB(255, 255, 255), Title = "End Color", Callback = function(v) L.EnemyBulletTracersColor2 = v end})
+UI_Elements.EnemyTracersDep = UI_Elements.VisualsTracers:AddDependencyBox()
+UI_Elements.EnemyTracersDep:SetupDependencies({{UI_Elements.EnemyTracersToggle, true}})
+UI_Elements.EnemyTracersDep:AddSlider("EnemyBulletTracersSize", {Text = "Size", Default = 0.2, Min = 0.05, Max = 2.5, Rounding = 2, Compact = true, Callback = function(v) L.EnemyBulletTracersSize = v end})
+UI_Elements.EnemyTracersDep:AddSlider("EnemyBulletTracersDuration", {Text = "Duration", Default = 1, Min = 0.1, Max = 5, Rounding = 1, Suffix = "s", Compact = true, Callback = function(v) L.EnemyBulletTracersDuration = v end})
+UI_Elements.EnemyTracersDep:AddDropdown("EnemyBulletTracersStyle", {Values = {"None", "1", "2", "3", "4", "5"}, Default = "None", Multi = false, Text = "Style", Callback = function(v) L.EnemyBulletTracersStyle = v end})
 
-local EnemyTracersDep = VisualsTracers:AddDependencyBox()
-EnemyTracersDep:SetupDependencies({{EnemyTracersToggle, true}})
-EnemyTracersDep:AddSlider("EnemyBulletTracersSize", {Text = "Size", Default = 0.2, Min = 0.05, Max = 2.5, Rounding = 2, Compact = true, Callback = function(v) L.EnemyBulletTracersSize = v end})
-EnemyTracersDep:AddSlider("EnemyBulletTracersDuration", {Text = "Duration", Default = 1, Min = 0.1, Max = 5, Rounding = 1, Suffix = "s", Compact = true, Callback = function(v) L.EnemyBulletTracersDuration = v end})
-EnemyTracersDep:AddDropdown("EnemyBulletTracersStyle", {Values = {"None", "1", "2", "3", "4", "5"}, Default = "None", Multi = false, Text = "Style", Callback = function(v) L.EnemyBulletTracersStyle = v end})
+UI_Elements.World_Group = Tabs.Visuals:AddRightGroupbox("World")
 
-local World_Group = Tabs.Visuals:AddRightGroupbox("World")
+UI_Elements.World_Group:AddToggle("NoFog", {Text = "No Fog", Default = false, Callback = function(v) L.NoFog = v; updateWorldVisuals() end})
+UI_Elements.World_Group:AddToggle("FullBright", {Text = "Fullbright", Default = false, Callback = function(v) L.FullBright = v; updateWorldVisuals() end})
 
-World_Group:AddToggle("NoFog", {Text = "No Fog", Default = false, Callback = function(v) L.NoFog = v; updateWorldVisuals() end})
-World_Group:AddToggle("FullBright", {Text = "Fullbright", Default = false, Callback = function(v) L.FullBright = v; updateWorldVisuals() end})
+UI_Elements.World_Group:AddDivider()
 
-World_Group:AddDivider()
-
-local AtmToggle = World_Group:AddToggle("AtmosphereOverride", {Text = "Atmosphere Color", Default = false, Callback = function(v) 
+UI_Elements.AtmToggle = UI_Elements.World_Group:AddToggle("AtmosphereOverride", {Text = "Atmosphere Color", Default = false, Callback = function(v) 
     L.AtmosphereOverride = v
     if not v and worldOriginals.AtmosphereColor then
         local atm = S.Lighting:FindFirstChildOfClass("Atmosphere")
@@ -1724,9 +1756,9 @@ local AtmToggle = World_Group:AddToggle("AtmosphereOverride", {Text = "Atmospher
     end
     updateWorldVisuals() 
 end})
-AtmToggle:AddColorPicker("AtmosphereColor", {Default = S.Lighting:FindFirstChildOfClass("Atmosphere") and S.Lighting:FindFirstChildOfClass("Atmosphere").Color or Color3.new(1, 1, 1), Title = "Atmosphere Color", Callback = function() updateWorldVisuals() end})
+UI_Elements.AtmToggle:AddColorPicker("AtmosphereColor", {Default = S.Lighting:FindFirstChildOfClass("Atmosphere") and S.Lighting:FindFirstChildOfClass("Atmosphere").Color or Color3.new(1, 1, 1), Title = "Atmosphere Color", Callback = function() updateWorldVisuals() end})
 
-local CCToggle = World_Group:AddToggle("ColorCorrectionOverride", {Text = "Color Correction", Default = false, Callback = function(v) 
+UI_Elements.CCToggle = UI_Elements.World_Group:AddToggle("ColorCorrectionOverride", {Text = "Color Correction", Default = false, Callback = function(v) 
     L.ColorCorrectionOverride = v
     if not v and worldOriginals.ColorCorrectionTintColor then
         local cc = S.Lighting:FindFirstChildOfClass("ColorCorrectionEffect")
@@ -1735,9 +1767,9 @@ local CCToggle = World_Group:AddToggle("ColorCorrectionOverride", {Text = "Color
     end
     updateWorldVisuals() 
 end})
-CCToggle:AddColorPicker("ColorCorrectionColor", {Default = S.Lighting:FindFirstChildOfClass("ColorCorrectionEffect") and S.Lighting:FindFirstChildOfClass("ColorCorrectionEffect").TintColor or Color3.new(1, 1, 1), Title = "Color Correction", Callback = function() updateWorldVisuals() end})
+UI_Elements.CCToggle:AddColorPicker("ColorCorrectionColor", {Default = S.Lighting:FindFirstChildOfClass("ColorCorrectionEffect") and S.Lighting:FindFirstChildOfClass("ColorCorrectionEffect").TintColor or Color3.new(1, 1, 1), Title = "Color Correction", Callback = function() updateWorldVisuals() end})
 
-local BloomToggle = World_Group:AddToggle("BloomOverride", {Text = "Bloom", Default = false, Callback = function(v) 
+UI_Elements.BloomToggle = UI_Elements.World_Group:AddToggle("BloomOverride", {Text = "Bloom", Default = false, Callback = function(v) 
     L.BloomOverride = v
     if not v and worldOriginals.Bloom then
         local bloom = S.Lighting:FindFirstChildOfClass("BloomEffect")
@@ -1748,17 +1780,17 @@ local BloomToggle = World_Group:AddToggle("BloomOverride", {Text = "Bloom", Defa
     end
     updateWorldVisuals() 
 end})
-BloomToggle:AddColorPicker("BloomColor", {Default = Color3.new(1, 1, 1), Title = "Bloom Tint", Callback = function() updateWorldVisuals() end})
+UI_Elements.BloomToggle:AddColorPicker("BloomColor", {Default = Color3.new(1, 1, 1), Title = "Bloom Tint", Callback = function() updateWorldVisuals() end})
 
-local BloomDep = World_Group:AddDependencyBox()
-BloomDep:SetupDependencies({{BloomToggle, true}})
-BloomDep:AddSlider("BloomIntensity", {Text = "Intensity", Default = S.Lighting:FindFirstChildOfClass("BloomEffect") and S.Lighting:FindFirstChildOfClass("BloomEffect").Intensity or 1, Min = 0, Max = 10, Rounding = 1, Compact = true, Callback = function() updateWorldVisuals() end})
-BloomDep:AddSlider("BloomThreshold", {Text = "Threshold", Default = S.Lighting:FindFirstChildOfClass("BloomEffect") and S.Lighting:FindFirstChildOfClass("BloomEffect").Threshold or 1, Min = 0, Max = 10, Rounding = 1, Compact = true, Callback = function() updateWorldVisuals() end})
-BloomDep:AddSlider("BloomSize", {Text = "Size", Default = S.Lighting:FindFirstChildOfClass("BloomEffect") and S.Lighting:FindFirstChildOfClass("BloomEffect").Size or 24, Min = 0, Max = 56, Rounding = 0, Compact = true, Callback = function() updateWorldVisuals() end})
+UI_Elements.BloomDep = UI_Elements.World_Group:AddDependencyBox()
+UI_Elements.BloomDep:SetupDependencies({{UI_Elements.BloomToggle, true}})
+UI_Elements.BloomDep:AddSlider("BloomIntensity", {Text = "Intensity", Default = S.Lighting:FindFirstChildOfClass("BloomEffect") and S.Lighting:FindFirstChildOfClass("BloomEffect").Intensity or 1, Min = 0, Max = 10, Rounding = 1, Compact = true, Callback = function() updateWorldVisuals() end})
+UI_Elements.BloomDep:AddSlider("BloomThreshold", {Text = "Threshold", Default = S.Lighting:FindFirstChildOfClass("BloomEffect") and S.Lighting:FindFirstChildOfClass("BloomEffect").Threshold or 1, Min = 0, Max = 10, Rounding = 1, Compact = true, Callback = function() updateWorldVisuals() end})
+UI_Elements.BloomDep:AddSlider("BloomSize", {Text = "Size", Default = S.Lighting:FindFirstChildOfClass("BloomEffect") and S.Lighting:FindFirstChildOfClass("BloomEffect").Size or 24, Min = 0, Max = 56, Rounding = 0, Compact = true, Callback = function() updateWorldVisuals() end})
 
-World_Group:AddDivider()
+UI_Elements.World_Group:AddDivider()
 
-local TimeToggle = World_Group:AddToggle("TimeOfDayEnabled", {Text = "Time Of Day", Default = false, Callback = function(v) 
+UI_Elements.TimeToggle = UI_Elements.World_Group:AddToggle("TimeOfDayEnabled", {Text = "Time Of Day", Default = false, Callback = function(v) 
     L.TimeOfDayEnabled = v
     if not v and worldOriginals.ClockTime then
         S.Lighting.ClockTime = worldOriginals.ClockTime
@@ -1767,11 +1799,11 @@ local TimeToggle = World_Group:AddToggle("TimeOfDayEnabled", {Text = "Time Of Da
     updateWorldVisuals()
 end})
 
-local TimeDep = World_Group:AddDependencyBox()
-TimeDep:SetupDependencies({{TimeToggle, true}})
-TimeDep:AddSlider("WorldClockTime", {Text = "Time", Default = S.Lighting.ClockTime, Min = 0, Max = 24, Rounding = 1, Compact = true, Callback = function() updateWorldVisuals() end})
+UI_Elements.TimeDep = UI_Elements.World_Group:AddDependencyBox()
+UI_Elements.TimeDep:SetupDependencies({{UI_Elements.TimeToggle, true}})
+UI_Elements.TimeDep:AddSlider("WorldClockTime", {Text = "Time", Default = S.Lighting.ClockTime, Min = 0, Max = 24, Rounding = 1, Compact = true, Callback = function() updateWorldVisuals() end})
 
-World_Group:AddToggle("AmbientOverride", {Text = "Ambient Override", Default = false, Callback = function(v) 
+UI_Elements.World_Group:AddToggle("AmbientOverride", {Text = "Ambient Override", Default = false, Callback = function(v) 
     L.AmbientOverride = v
     if not v and worldOriginals.Ambient then
         S.Lighting.Ambient = worldOriginals.Ambient; S.Lighting.OutdoorAmbient = worldOriginals.OutdoorAmbient
@@ -1779,79 +1811,79 @@ World_Group:AddToggle("AmbientOverride", {Text = "Ambient Override", Default = f
     end
     updateWorldVisuals()
 end}):AddColorPicker("AmbientColor", {Default = S.Lighting.Ambient, Title = "Ambient", Callback = function() updateWorldVisuals() end}):AddColorPicker("OutdoorAmbientColor", {Default = S.Lighting.OutdoorAmbient, Title = "Outdoor Ambient", Callback = function() updateWorldVisuals() end})
-local SA_Tabbox = Tabs.Combat:AddLeftTabbox("Silent & Aimbot")
-local Combat_SA = SA_Tabbox:AddTab("Silent Aim")
-local Combat_Aim = SA_Tabbox:AddTab("Aimbot")
-local SA_Toggle = Combat_SA:AddToggle("SA_Enabled", {Text = "Silent Aim", Default = false, Callback = function(v) L.SA_Enabled = v end})
-SA_Toggle:AddKeyPicker("SA_Key", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Silent Aim", NoUI = false})
-Combat_SA:AddToggle("SA_Backtrack", {Text = "Backtrack Hitbox", Default = false, Callback = function(v) L.SA_Backtrack = v end})
-Combat_SA:AddToggle("SA_WallCheck", {Text = "Wall Check", Default = false, Callback = function(v) L.SA_WallCheck = v end})
-Combat_SA:AddToggle("SA_ClosestPart", {Text = "Closest Part", Default = false, Callback = function(v) L.SA_ClosestPart = v end})
-Combat_SA:AddToggle("SA_DuelOnly", {Text = "Duel Focus", Default = false, Tooltip = "Focuses targeting onto your duel opponent when a duel is active.", Callback = function(v) L.SA_DuelOnly = v end})
-Combat_SA:AddSlider("SA_HitChance", {Text = "Hit Chance", Default = 100, Min = 0, Max = 100, Suffix = "%", Rounding = 0, Compact = true, Callback = function(v) L.SA_HitChance = v end})
-Combat_SA:AddSlider("SA_MaxDist", {Text = "Max Distance", Default = 1000, Min = 0, Max = 5000, Rounding = 0, Compact = true, Callback = function(v) L.SA_MaxDist = v end})
-Combat_SA:AddDropdown("SA_TargetPart", {Values = {"Head", "UpperTorso", "Torso", "LowerTorso", "Random"}, Default = 1, Multi = false, Text = "Hit Part", Callback = function(v) L.SA_TargetPart = v end})
-Combat_SA:AddDropdown("SA_Targets", {Values = {"Players", "NPCs", "Animals"}, Default = {"Players"}, Multi = true, Text = "Target Types", Callback = function(v) L.SA_Targets = v end})
-Combat_SA:AddDivider()
-Combat_SA:AddToggle("SA_Snapline", {Text = "Snapline", Default = false, Callback = function(v) L.SA_Snapline = v end}):AddColorPicker("SA_Snapline_Color", {Default = Color3.fromRGB(255, 255, 255), Title = "Color", Callback = function(c) if snaplineLine then snaplineLine.Color = c end; L.SA_Snapline_Color = c end})
-local SA_FOV_Toggle = Combat_SA:AddToggle("SA_FOV_Vis", {Text = "Show FOV", Default = false, Callback = function(v) L.SA_FOV_Vis = v end})
-SA_FOV_Toggle:AddColorPicker("SA_FOV_Color", {Default = Color3.fromRGB(255, 255, 255), Transparency = 0, Title = "Color", Callback = function(c, t) 
+UI_Elements.SA_Tabbox = Tabs.Combat:AddLeftTabbox("Silent & Aimbot")
+UI_Elements.Combat_SA = UI_Elements.SA_Tabbox:AddTab("Silent Aim")
+UI_Elements.Combat_Aim = UI_Elements.SA_Tabbox:AddTab("Aimbot")
+UI_Elements.SA_Toggle = UI_Elements.Combat_SA:AddToggle("SA_Enabled", {Text = "Silent Aim", Default = false, Callback = function(v) L.SA_Enabled = v end})
+UI_Elements.SA_Toggle:AddKeyPicker("SA_Key", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Silent Aim", NoUI = false})
+UI_Elements.Combat_SA:AddToggle("SA_Backtrack", {Text = "Backtrack Hitbox", Default = false, Callback = function(v) L.SA_Backtrack = v end})
+UI_Elements.Combat_SA:AddToggle("SA_WallCheck", {Text = "Wall Check", Default = false, Callback = function(v) L.SA_WallCheck = v end})
+UI_Elements.Combat_SA:AddToggle("SA_ClosestPart", {Text = "Closest Part", Default = false, Callback = function(v) L.SA_ClosestPart = v end})
+UI_Elements.Combat_SA:AddToggle("SA_DuelOnly", {Text = "Duel Focus", Default = false, Tooltip = "Focuses targeting onto your duel opponent when a duel is active.", Callback = function(v) L.SA_DuelOnly = v end})
+UI_Elements.Combat_SA:AddSlider("SA_HitChance", {Text = "Hit Chance", Default = 100, Min = 0, Max = 100, Suffix = "%", Rounding = 0, Compact = true, Callback = function(v) L.SA_HitChance = v end})
+UI_Elements.Combat_SA:AddSlider("SA_MaxDist", {Text = "Max Distance", Default = 1000, Min = 0, Max = 5000, Rounding = 0, Compact = true, Callback = function(v) L.SA_MaxDist = v end})
+UI_Elements.Combat_SA:AddDropdown("SA_TargetPart", {Values = {"Head", "UpperTorso", "Torso", "LowerTorso", "Random"}, Default = 1, Multi = false, Text = "Hit Part", Callback = function(v) L.SA_TargetPart = v end})
+UI_Elements.Combat_SA:AddDropdown("SA_Targets", {Values = {"Players", "NPCs", "Animals"}, Default = {"Players"}, Multi = true, Text = "Target Types", Callback = function(v) L.SA_Targets = v end})
+UI_Elements.Combat_SA:AddDivider()
+UI_Elements.Combat_SA:AddToggle("SA_Snapline", {Text = "Snapline", Default = false, Callback = function(v) L.SA_Snapline = v end}):AddColorPicker("SA_Snapline_Color", {Default = Color3.fromRGB(255, 255, 255), Title = "Color", Callback = function(c) if snaplineLine then snaplineLine.Color = c end; L.SA_Snapline_Color = c end})
+UI_Elements.SA_FOV_Toggle = UI_Elements.Combat_SA:AddToggle("SA_FOV_Vis", {Text = "Show FOV", Default = false, Callback = function(v) L.SA_FOV_Vis = v end})
+UI_Elements.SA_FOV_Toggle:AddColorPicker("SA_FOV_Color", {Default = Color3.fromRGB(255, 255, 255), Transparency = 0, Title = "Color", Callback = function(c, t) 
     L.SA_FOV_Color = c; L.SA_FOV_Transparency = t
     if fovCircle then fovCircle.Color = c; fovCircle.Transparency = 1 - t end
 end})
-local SA_FOV_Dep = Combat_SA:AddDependencyBox(); SA_FOV_Dep:SetupDependencies({{SA_FOV_Toggle, true}})
-local SA_Grad_Toggle = SA_FOV_Dep:AddToggle("SA_FOV_Gradient", {Text = "Gradient Color", Default = false, Callback = function(v) L.SA_FOV_Gradient = v end})
-SA_Grad_Toggle:AddColorPicker("SA_FOV_Grad1", {Default = Color3.new(1, 1, 1), Title = "Color 1", Callback = function(c) L.SA_FOV_Grad1 = c end})
-SA_Grad_Toggle:AddColorPicker("SA_FOV_Grad2", {Default = Color3.fromRGB(125, 151, 255), Title = "Color 2", Callback = function(c) L.SA_FOV_Grad2 = c end})
-local SA_Grad_Dep = Combat_SA:AddDependencyBox(); SA_Grad_Dep:SetupDependencies({{SA_Grad_Toggle, true}})
-SA_Grad_Dep:AddSlider("SA_FOV_Speed", {Text = "Speed", Default = 1, Min = 0.1, Max = 10, Rounding = 1, Compact = true, Callback = function(v) L.SA_FOV_Speed = v end})
-local SA_Highlight_Toggle = Combat_SA:AddToggle("SA_HighlightTarget", {Text = "Highlight Target", Default = false, Callback = function(v) L.SA_HighlightTarget = v end})
-SA_Highlight_Toggle:AddColorPicker("SA_Highlight_Color", {Default = Color3.fromRGB(255, 0, 0), Title = "Highlight Color", Callback = function(c) L.SA_Highlight_Color = c end})
-Combat_SA:AddToggle("SA_Dynamic_FOV", {Text = "Dynamic FOV", Default = false, Callback = function(v) L.SA_Dynamic_FOV = v end})
-Combat_SA:AddSlider("SA_FOV_Radius", {Text = "FOV Radius", Default = 130, Min = 0, Max = 800, Rounding = 0, Compact = true, Callback = function(v) L.SA_FOV = v; UI.fov.Radius = v; UI.fovO.Radius = v end})
-Combat_SA:AddSlider("SA_FOV_Thickness", {Text = "FOV Thickness", Default = 1.5, Min = 1, Max = 5, Rounding = 1, Compact = true, Callback = function(v) L.SA_FOV_Thickness = v end})
+UI_Elements.SA_FOV_Dep = UI_Elements.Combat_SA:AddDependencyBox(); UI_Elements.SA_FOV_Dep:SetupDependencies({{UI_Elements.SA_FOV_Toggle, true}})
+UI_Elements.SA_Grad_Toggle = UI_Elements.SA_FOV_Dep:AddToggle("SA_FOV_Gradient", {Text = "Gradient Color", Default = false, Callback = function(v) L.SA_FOV_Gradient = v end})
+UI_Elements.SA_Grad_Toggle:AddColorPicker("SA_FOV_Grad1", {Default = Color3.new(1, 1, 1), Title = "Color 1", Callback = function(c) L.SA_FOV_Grad1 = c end})
+UI_Elements.SA_Grad_Toggle:AddColorPicker("SA_FOV_Grad2", {Default = Color3.fromRGB(125, 151, 255), Title = "Color 2", Callback = function(c) L.SA_FOV_Grad2 = c end})
+UI_Elements.SA_Grad_Dep = UI_Elements.Combat_SA:AddDependencyBox(); UI_Elements.SA_Grad_Dep:SetupDependencies({{UI_Elements.SA_Grad_Toggle, true}})
+UI_Elements.SA_Grad_Dep:AddSlider("SA_FOV_Speed", {Text = "Speed", Default = 1, Min = 0.1, Max = 10, Rounding = 1, Compact = true, Callback = function(v) L.SA_FOV_Speed = v end})
+UI_Elements.SA_Highlight_Toggle = UI_Elements.Combat_SA:AddToggle("SA_HighlightTarget", {Text = "Highlight Target", Default = false, Callback = function(v) L.SA_HighlightTarget = v end})
+UI_Elements.SA_Highlight_Toggle:AddColorPicker("SA_Highlight_Color", {Default = Color3.fromRGB(255, 0, 0), Title = "Highlight Color", Callback = function(c) L.SA_Highlight_Color = c end})
+UI_Elements.Combat_SA:AddToggle("SA_Dynamic_FOV", {Text = "Dynamic FOV", Default = false, Callback = function(v) L.SA_Dynamic_FOV = v end})
+UI_Elements.Combat_SA:AddSlider("SA_FOV_Radius", {Text = "FOV Radius", Default = 130, Min = 0, Max = 800, Rounding = 0, Compact = true, Callback = function(v) L.SA_FOV = v; UI.fov.Radius = v; UI.fovO.Radius = v end})
+UI_Elements.Combat_SA:AddSlider("SA_FOV_Thickness", {Text = "FOV Thickness", Default = 1.5, Min = 1, Max = 5, Rounding = 1, Compact = true, Callback = function(v) L.SA_FOV_Thickness = v end})
 
-local AimToggle = Combat_Aim:AddToggle("Aim_Enabled", {Text = "Aimbot", Default = false, Callback = function(v) L.Aim_Enabled = v end})
-AimToggle:AddKeyPicker("Aim_Key", {Default = "MB2", SyncToggleState = true, Mode = "Hold", Text = "Aimbot", NoUI = false})
-Combat_Aim:AddToggle("Aim_WallCheck", {Text = "Wall Check", Default = false, Callback = function(v) L.Aim_WallCheck = v end})
-Combat_Aim:AddToggle("Aim_StickyAim", {Text = "Sticky Aim", Default = false, Callback = function(v) L.Aim_StickyAim = v end})
-Combat_Aim:AddToggle("Aim_BulletDrop", {Text = "Calculate Bullet Drop", Default = false, Callback = function(v) L.Aim_BulletDrop = v end})
-Combat_Aim:AddToggle("Aim_BulletLead", {Text = "Calculate Bullet Lead", Default = false, Callback = function(v) L.Aim_BulletLead = v end})
-Combat_Aim:AddToggle("Aim_DuelOnly", {Text = "Duel Focus", Default = false, Tooltip = "Focuses targeting onto your duel opponent when a duel is active.", Callback = function(v) L.Aim_DuelOnly = v end})
-Combat_Aim:AddSlider("Aim_Smoothness", {Text = "Smoothness", Default = 1, Min = 1, Max = 10, Rounding = 1, Compact = true, Callback = function(v) L.Aim_Smoothness = v end})
-Combat_Aim:AddSlider("Aim_MaxDist", {Text = "Max Distance", Default = 1000, Min = 0, Max = 5000, Rounding = 0, Compact = true, Callback = function(v) L.Aim_MaxDist = v end})
-Combat_Aim:AddDropdown("Aim_TargetPart", {Values = {"Head", "UpperTorso", "Torso", "LowerTorso", "Random"}, Default = 1, Multi = false, Text = "Aimbot Bone", Callback = function(v) L.Aim_TargetPart = v end})
-Combat_Aim:AddDropdown("Aim_Targets", {Values = {"Players", "NPCs", "Animals"}, Default = {"Players"}, Multi = true, Text = "Targets", Callback = function(v) L.Aim_Targets = v end})
-Combat_Aim:AddDivider()
-Combat_Aim:AddToggle("Aim_Snapline", {Text = "Snapline", Default = false, Callback = function(v) L.Aim_Snapline = v end}):AddColorPicker("Aim_Snapline_Color", {Default = Color3.fromRGB(255, 255, 255), Title = "Color", Callback = function(c) if aimSnaplineLine then aimSnaplineLine.Color = c end; L.Aim_Snapline_Color = c end})
-local Aim_FOV_Toggle = Combat_Aim:AddToggle("Aim_FOV_Vis", {Text = "Show FOV", Default = false, Callback = function(v) L.Aim_FOV_Vis = v end})
-Aim_FOV_Toggle:AddColorPicker("Aim_FOV_Color", {Default = Color3.fromRGB(255, 255, 255), Transparency = 0, Title = "Color", Callback = function(c, t) 
+UI_Elements.AimToggle = UI_Elements.Combat_Aim:AddToggle("Aim_Enabled", {Text = "Aimbot", Default = false, Callback = function(v) L.Aim_Enabled = v end})
+UI_Elements.AimToggle:AddKeyPicker("Aim_Key", {Default = "MB2", SyncToggleState = true, Mode = "Hold", Text = "Aimbot", NoUI = false})
+UI_Elements.Combat_Aim:AddToggle("Aim_WallCheck", {Text = "Wall Check", Default = false, Callback = function(v) L.Aim_WallCheck = v end})
+UI_Elements.Combat_Aim:AddToggle("Aim_StickyAim", {Text = "Sticky Aim", Default = false, Callback = function(v) L.Aim_StickyAim = v end})
+UI_Elements.Combat_Aim:AddToggle("Aim_BulletDrop", {Text = "Calculate Bullet Drop", Default = false, Callback = function(v) L.Aim_BulletDrop = v end})
+UI_Elements.Combat_Aim:AddToggle("Aim_BulletLead", {Text = "Calculate Bullet Lead", Default = false, Callback = function(v) L.Aim_BulletLead = v end})
+UI_Elements.Combat_Aim:AddToggle("Aim_DuelOnly", {Text = "Duel Focus", Default = false, Tooltip = "Focuses targeting onto your duel opponent when a duel is active.", Callback = function(v) L.Aim_DuelOnly = v end})
+UI_Elements.Combat_Aim:AddSlider("Aim_Smoothness", {Text = "Smoothness", Default = 1, Min = 1, Max = 10, Rounding = 1, Compact = true, Callback = function(v) L.Aim_Smoothness = v end})
+UI_Elements.Combat_Aim:AddSlider("Aim_MaxDist", {Text = "Max Distance", Default = 1000, Min = 0, Max = 5000, Rounding = 0, Compact = true, Callback = function(v) L.Aim_MaxDist = v end})
+UI_Elements.Combat_Aim:AddDropdown("Aim_TargetPart", {Values = {"Head", "UpperTorso", "Torso", "LowerTorso", "Random"}, Default = 1, Multi = false, Text = "Aimbot Bone", Callback = function(v) L.Aim_TargetPart = v end})
+UI_Elements.Combat_Aim:AddDropdown("Aim_Targets", {Values = {"Players", "NPCs", "Animals"}, Default = {"Players"}, Multi = true, Text = "Targets", Callback = function(v) L.Aim_Targets = v end})
+UI_Elements.Combat_Aim:AddDivider()
+UI_Elements.Combat_Aim:AddToggle("Aim_Snapline", {Text = "Snapline", Default = false, Callback = function(v) L.Aim_Snapline = v end}):AddColorPicker("Aim_Snapline_Color", {Default = Color3.fromRGB(255, 255, 255), Title = "Color", Callback = function(c) if aimSnaplineLine then aimSnaplineLine.Color = c end; L.Aim_Snapline_Color = c end})
+UI_Elements.Aim_FOV_Toggle = UI_Elements.Combat_Aim:AddToggle("Aim_FOV_Vis", {Text = "Show FOV", Default = false, Callback = function(v) L.Aim_FOV_Vis = v end})
+UI_Elements.Aim_FOV_Toggle:AddColorPicker("Aim_FOV_Color", {Default = Color3.fromRGB(255, 255, 255), Transparency = 0, Title = "Color", Callback = function(c, t) 
     L.Aim_FOV_Color = c; L.Aim_FOV_Transparency = t
     if aimFovCircle then aimFovCircle.Color = c; aimFovCircle.Transparency = 1 - t end
 end})
-local Aim_FOV_Dep = Combat_Aim:AddDependencyBox(); Aim_FOV_Dep:SetupDependencies({{Aim_FOV_Toggle, true}})
-local Aim_Grad_Toggle = Aim_FOV_Dep:AddToggle("Aim_FOV_Gradient", {Text = "Gradient Color", Default = false, Callback = function(v) L.Aim_FOV_Gradient = v end})
-Aim_Grad_Toggle:AddColorPicker("Aim_FOV_Grad1", {Default = Color3.new(1, 1, 1), Title = "Color 1", Callback = function(c) L.Aim_FOV_Grad1 = c end})
-Aim_Grad_Toggle:AddColorPicker("Aim_FOV_Grad2", {Default = Color3.fromRGB(125, 151, 255), Title = "Color 2", Callback = function(c) L.Aim_FOV_Grad2 = c end})
-local Aim_Grad_Dep = Combat_Aim:AddDependencyBox(); Aim_Grad_Dep:SetupDependencies({{Aim_Grad_Toggle, true}})
-Aim_Grad_Dep:AddSlider("Aim_FOV_Speed", {Text = "Speed", Default = 1, Min = 0.1, Max = 10, Rounding = 1, Compact = true, Callback = function(v) L.Aim_FOV_Speed = v end})
-local Aim_Highlight_Toggle = Combat_Aim:AddToggle("Aim_HighlightTarget", {Text = "Highlight Target", Default = false, Callback = function(v) L.Aim_HighlightTarget = v end})
-Aim_Highlight_Toggle:AddColorPicker("Aim_Highlight_Color", {Default = Color3.fromRGB(255, 0, 0), Title = "Highlight Color", Callback = function(c) L.Aim_Highlight_Color = c end})
-Combat_Aim:AddToggle("Aim_Dynamic_FOV", {Text = "Dynamic FOV", Default = false, Callback = function(v) L.Aim_Dynamic_FOV = v end})
-Combat_Aim:AddSlider("Aim_FOV_Radius", {Text = "FOV Radius", Default = 130, Min = 0, Max = 800, Rounding = 0, Compact = true, Callback = function(v) L.Aim_FOV = v; UI.aimFov.Radius = v; UI.aimFovO.Radius = v end})
-Combat_Aim:AddSlider("Aim_FOV_Thickness", {Text = "FOV Thickness", Default = 1.5, Min = 1, Max = 5, Rounding = 1, Compact = true, Callback = function(v) L.Aim_FOV_Thickness = v end})
+UI_Elements.Aim_FOV_Dep = UI_Elements.Combat_Aim:AddDependencyBox(); UI_Elements.Aim_FOV_Dep:SetupDependencies({{UI_Elements.Aim_FOV_Toggle, true}})
+UI_Elements.Aim_Grad_Toggle = UI_Elements.Aim_FOV_Dep:AddToggle("Aim_FOV_Gradient", {Text = "Gradient Color", Default = false, Callback = function(v) L.Aim_FOV_Gradient = v end})
+UI_Elements.Aim_Grad_Toggle:AddColorPicker("Aim_FOV_Grad1", {Default = Color3.new(1, 1, 1), Title = "Color 1", Callback = function(c) L.Aim_FOV_Grad1 = c end})
+UI_Elements.Aim_Grad_Toggle:AddColorPicker("Aim_FOV_Grad2", {Default = Color3.fromRGB(125, 151, 255), Title = "Color 2", Callback = function(c) L.Aim_FOV_Grad2 = c end})
+UI_Elements.Aim_Grad_Dep = UI_Elements.Combat_Aim:AddDependencyBox(); UI_Elements.Aim_Grad_Dep:SetupDependencies({{UI_Elements.Aim_Grad_Toggle, true}})
+UI_Elements.Aim_Grad_Dep:AddSlider("Aim_FOV_Speed", {Text = "Speed", Default = 1, Min = 0.1, Max = 10, Rounding = 1, Compact = true, Callback = function(v) L.Aim_FOV_Speed = v end})
+UI_Elements.Aim_Highlight_Toggle = UI_Elements.Combat_Aim:AddToggle("Aim_HighlightTarget", {Text = "Highlight Target", Default = false, Callback = function(v) L.Aim_HighlightTarget = v end})
+UI_Elements.Aim_Highlight_Toggle:AddColorPicker("Aim_Highlight_Color", {Default = Color3.fromRGB(255, 0, 0), Title = "Highlight Color", Callback = function(c) L.Aim_Highlight_Color = c end})
+UI_Elements.Combat_Aim:AddToggle("Aim_Dynamic_FOV", {Text = "Dynamic FOV", Default = false, Callback = function(v) L.Aim_Dynamic_FOV = v end})
+UI_Elements.Combat_Aim:AddSlider("Aim_FOV_Radius", {Text = "FOV Radius", Default = 130, Min = 0, Max = 800, Rounding = 0, Compact = true, Callback = function(v) L.Aim_FOV = v; UI.aimFov.Radius = v; UI.aimFovO.Radius = v end})
+UI_Elements.Combat_Aim:AddSlider("Aim_FOV_Thickness", {Text = "FOV Thickness", Default = 1.5, Min = 1, Max = 5, Rounding = 1, Compact = true, Callback = function(v) L.Aim_FOV_Thickness = v end})
 
-local Combat_GM = Tabs.Combat:AddRightGroupbox("Gun Mods")
-local GM_RecoilToggle = Combat_GM:AddToggle("GM_NoRecoil", {Text = "No Recoil", Default = false, Callback = function(v) L.GM_NoRecoil = v; updateGunMods() end})
-local GM_RecoilDep = Combat_GM:AddDependencyBox(); GM_RecoilDep:SetupDependencies({{GM_RecoilToggle, true}})
-GM_RecoilDep:AddSlider("GM_RecoilAmount", {Text = "Recoil Amount", Default = 0, Min = 0, Max = 100, Suffix = "%", Rounding = 0, Compact = true, Callback = function(v) L.GM_RecoilAmount = v; updateGunMods() end})
-local GM_SpreadToggle = Combat_GM:AddToggle("GM_NoSpread", {Text = "No Spread", Default = false, Callback = function(v) L.GM_NoSpread = v; updateGunMods() end})
-local GM_SpreadDep = Combat_GM:AddDependencyBox(); GM_SpreadDep:SetupDependencies({{GM_SpreadToggle, true}})
-GM_SpreadDep:AddSlider("GM_SpreadAmount", {Text = "Spread Amount", Default = 0, Min = 0, Max = 100, Suffix = "%", Rounding = 0, Compact = true, Callback = function(v) L.GM_SpreadAmount = v; updateGunMods() end})
-Combat_GM:AddToggle("GM_InstantReload", {Text = "Instant Reload", Default = false, Callback = function(v) L.GM_InstantReload = v; updateGunMods() end})
-Combat_GM:AddToggle("GM_InfWallbang", {Text = "Infinite Wallbang", Default = false, Callback = function(v) L.GM_InfWallbang = v; updateGunMods() end})
-Combat_GM:AddToggle("GM_RapidFire", {Text = "No Weapon Delay", Default = false, Callback = function(v) L.GM_RapidFire = v; updateGunMods() end})
-Combat_GM:AddToggle("GM_NoScope", {Text = "No Scope Overlay", Default = false, Callback = function(v) 
+UI_Elements.Combat_GM = Tabs.Combat:AddRightGroupbox("Gun Mods")
+UI_Elements.GM_RecoilToggle = UI_Elements.Combat_GM:AddToggle("GM_NoRecoil", {Text = "No Recoil", Default = false, Callback = function(v) L.GM_NoRecoil = v; updateGunMods() end})
+UI_Elements.GM_RecoilDep = UI_Elements.Combat_GM:AddDependencyBox(); UI_Elements.GM_RecoilDep:SetupDependencies({{UI_Elements.GM_RecoilToggle, true}})
+UI_Elements.GM_RecoilDep:AddSlider("GM_RecoilAmount", {Text = "Recoil Amount", Default = 0, Min = 0, Max = 100, Suffix = "%", Rounding = 0, Compact = true, Callback = function(v) L.GM_RecoilAmount = v; updateGunMods() end})
+UI_Elements.GM_SpreadToggle = UI_Elements.Combat_GM:AddToggle("GM_NoSpread", {Text = "No Spread", Default = false, Callback = function(v) L.GM_NoSpread = v; updateGunMods() end})
+UI_Elements.GM_SpreadDep = UI_Elements.Combat_GM:AddDependencyBox(); UI_Elements.GM_SpreadDep:SetupDependencies({{UI_Elements.GM_SpreadToggle, true}})
+UI_Elements.GM_SpreadDep:AddSlider("GM_SpreadAmount", {Text = "Spread Amount", Default = 0, Min = 0, Max = 100, Suffix = "%", Rounding = 0, Compact = true, Callback = function(v) L.GM_SpreadAmount = v; updateGunMods() end})
+UI_Elements.Combat_GM:AddToggle("GM_InstantReload", {Text = "Instant Reload", Default = false, Callback = function(v) L.GM_InstantReload = v; updateGunMods() end})
+UI_Elements.Combat_GM:AddToggle("GM_InfWallbang", {Text = "Infinite Wallbang", Default = false, Callback = function(v) L.GM_InfWallbang = v; updateGunMods() end})
+UI_Elements.Combat_GM:AddToggle("GM_RapidFire", {Text = "No Weapon Delay", Default = false, Callback = function(v) L.GM_RapidFire = v; updateGunMods() end})
+UI_Elements.Combat_GM:AddToggle("GM_NoScope", {Text = "No Scope Overlay", Default = false, Callback = function(v) 
     L.GM_NoScope = v; 
     updateGunMods()
     if not v then
@@ -1859,14 +1891,19 @@ Combat_GM:AddToggle("GM_NoScope", {Text = "No Scope Overlay", Default = false, C
         if mainUI then mainUI.Enabled = true end
     end
 end})
-local ReloadModifierToggle = Combat_GM:AddToggle("GM_ReloadSpeedModifier", {Text = "Reload Speed Modifier", Default = false, Callback = function(v) L.GM_ReloadSpeedModifier = v; updateGunMods() end})
-local ReloadModifierDep = Combat_GM:AddDependencyBox(); ReloadModifierDep:SetupDependencies({{ReloadModifierToggle, true}})
-ReloadModifierDep:AddSlider("GM_ReloadSpeedAmount", {Text = "Modifier Amount", Default = 2, Min = 0.1, Max = 10, Rounding = 1, Compact = true, Suffix = "x", Callback = function(v) L.GM_ReloadSpeedAmount = v; updateGunMods() end})
-local Misc_Camera = Tabs.Misc:AddLeftGroupbox("Camera")
-Misc_Camera:AddToggle('CZ_E', {Text='Camera Zoom', Default=false, Callback=function(v) L.CZ_E=v end}):AddKeyPicker('CZ_K', {Default='None', SyncToggleState=true, Mode='Toggle', Text='Camera Zoom', NoUI=false})
-Misc_Camera:AddSlider('CZ_V', {Text='Zoom Multiplier', Default=1, Min=1, Max=15, Rounding = 1, Compact=true, Suffix='x', Callback=function(v) L.CZ_V=v end})
-local Misc_Emotes = Tabs.Misc:AddLeftGroupbox("Emotes")
-local ClapToggle = Misc_Emotes:AddToggle("ClapSpeedMultiplier", {Text = "Clap Speed Multiplier", Default = false, Callback = function(v) 
+UI_Elements.ReloadModifierToggle = UI_Elements.Combat_GM:AddToggle("GM_ReloadSpeedModifier", {Text = "Reload Speed Modifier", Default = false, Callback = function(v) L.GM_ReloadSpeedModifier = v; updateGunMods() end})
+UI_Elements.ReloadModifierDep = UI_Elements.Combat_GM:AddDependencyBox(); UI_Elements.ReloadModifierDep:SetupDependencies({{UI_Elements.ReloadModifierToggle, true}})
+UI_Elements.ReloadModifierDep:AddSlider("GM_ReloadSpeedAmount", {Text = "Modifier Amount", Default = 2, Min = 0.1, Max = 10, Rounding = 1, Compact = true, Suffix = "x", Callback = function(v) L.GM_ReloadSpeedAmount = v; updateGunMods() end})
+
+UI_Elements.Combat_GM:AddDivider()
+UI_Elements.HideErrorsToggle = UI_Elements.Combat_GM:AddToggle("HideProjErrors", {Text = "Hide Proj_Errors", Default = false, Callback = function(v) L.HideProjErrors = v end})
+UI_Elements.HideErrorsDep = UI_Elements.Combat_GM:AddDependencyBox(); UI_Elements.HideErrorsDep:SetupDependencies({{UI_Elements.HideErrorsToggle, true}})
+UI_Elements.HideErrorsDep:AddDropdown("ErrorHandlingMode", {Values = {"Notify", "Hide"}, Default = 1, Multi = false, Text = "Error Intercept Mode", Callback = function(v) L.ErrorHandlingMode = v end})
+UI_Elements.Misc_Camera = Tabs.Misc:AddLeftGroupbox("Camera")
+UI_Elements.Misc_Camera:AddToggle('CZ_E', {Text='Camera Zoom', Default=false, Callback=function(v) L.CZ_E=v end}):AddKeyPicker('CZ_K', {Default='None', SyncToggleState=true, Mode='Toggle', Text='Camera Zoom', NoUI=false})
+UI_Elements.Misc_Camera:AddSlider('CZ_V', {Text='Zoom Multiplier', Default=1, Min=1, Max=15, Rounding = 1, Compact=true, Suffix='x', Callback=function(v) L.CZ_V=v end})
+UI_Elements.Misc_Emotes = Tabs.Misc:AddLeftGroupbox("Emotes")
+UI_Elements.ClapToggle = UI_Elements.Misc_Emotes:AddToggle("ClapSpeedMultiplier", {Text = "Clap Speed Multiplier", Default = false, Callback = function(v) 
     L.ClapSpeedMultiplier = v
     local params = S.ReplicatedStorage:FindFirstChild("Params")
     local emoteParams = params and params:FindFirstChild("Emotes")
@@ -1875,8 +1912,8 @@ local ClapToggle = Misc_Emotes:AddToggle("ClapSpeedMultiplier", {Text = "Clap Sp
         clapSpeed.Value = v and L.ClapSpeedAmount or 3
     end
 end})
-local ClapDep = Misc_Emotes:AddDependencyBox(); ClapDep:SetupDependencies({{ClapToggle, true}})
-ClapDep:AddSlider("ClapSpeedAmount", {Text = "Speed Multiplier", Default = 3, Min = 0.1, Max = 10000, Rounding = 1, Compact = true, Callback = function(v) 
+UI_Elements.ClapDep = UI_Elements.Misc_Emotes:AddDependencyBox(); UI_Elements.ClapDep:SetupDependencies({{UI_Elements.ClapToggle, true}})
+UI_Elements.ClapDep:AddSlider("ClapSpeedAmount", {Text = "Speed Multiplier", Default = 3, Min = 0.1, Max = 10000, Rounding = 1, Compact = true, Callback = function(v) 
     L.ClapSpeedAmount = v
     if L.ClapSpeedMultiplier then
         local params = S.ReplicatedStorage:FindFirstChild("Params")
@@ -1885,51 +1922,57 @@ ClapDep:AddSlider("ClapSpeedAmount", {Text = "Speed Multiplier", Default = 3, Mi
         if clapSpeed and clapSpeed:IsA("NumberValue") then clapSpeed.Value = v end
     end
 end})
-Misc_Emotes:AddDivider()
+UI_Elements.Misc_Emotes:AddDivider()
 local emotePackFolder = S.ReplicatedStorage.Resources.Animations_New.Player.Emotes.EmotePack
 local emoteList = {"Yakuza", "Bow", "Dab", "Dance3", "Dance4", "Kalinka", "Ponder", "The Shuffle", "The Twist"}
-local EmoteToggle = Misc_Emotes:AddToggle("EmotePackEnabled", {Text = "Emote Pack", Default = false, Callback = function(v) L.EmotePackEnabled = v end})
-local EmoteDep = Misc_Emotes:AddDependencyBox(); EmoteDep:SetupDependencies({{EmoteToggle, true}})
+UI_Elements.EmoteToggle = UI_Elements.Misc_Emotes:AddToggle("EmotePackEnabled", {Text = "Emote Pack", Default = false, Callback = function(v) L.EmotePackEnabled = v end})
+UI_Elements.EmoteDep = UI_Elements.Misc_Emotes:AddDependencyBox(); UI_Elements.EmoteDep:SetupDependencies({{UI_Elements.EmoteToggle, true}})
 for _, name in ipairs(emoteList) do
-    EmoteDep:AddButton(name, function()
+    UI_Elements.EmoteDep:AddButton(name, function()
         local animObj = emotePackFolder:FindFirstChild(name)
         if animObj then playEmote(animObj) end
     end)
 end
-EmoteDep:AddButton("Stop Emote", function()
+UI_Elements.EmoteDep:AddButton("Stop Emote", function()
     if currentEmoteTrack then currentEmoteTrack:Stop(); currentEmoteTrack:Destroy(); currentEmoteTrack = nil end
 end)
 
-local Misc_Troll = Tabs.Misc:AddLeftGroupbox("Troll")
-local MBF_Toggle = Misc_Troll:AddToggle("MBF_Enabled", {Text = "Money Bag Fling", Default = false, Callback = function(v) 
-    L.MBF_Enabled = v 
-    if v and Toggles.MBF_ShowRadius then Toggles.MBF_ShowRadius:SetValue(true) end
-end})
-MBF_Toggle:AddKeyPicker("MBF_Key", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Money Bag Fling", NoUI = false})
+UI_Elements.Misc_Troll = Tabs.Misc:AddLeftGroupbox("Troll")
+UI_Elements.MBF_Toggle = UI_Elements.Misc_Troll:AddToggle("MBF_Enabled", {
+    Text = "Money Bag Fling", 
+    Default = false, 
+    Blatant = true,
+    Tooltip = "target must be ragdolled ( buggy )",
+    Callback = function(v) 
+        L.MBF_Enabled = v 
+        if v and Toggles.MBF_ShowRadius then Toggles.MBF_ShowRadius:SetValue(true) end
+    end
+})
+UI_Elements.MBF_Toggle:AddKeyPicker("MBF_Key", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Money Bag Fling", NoUI = false})
 
-local MBF_Dep = Misc_Troll:AddDependencyBox(); MBF_Dep:SetupDependencies({{MBF_Toggle, true}})
-MBF_Dep:AddToggle("MBF_ShowRadius", {Text = "Show Radius", Default = false, Callback = function(v) L.MBF_ShowRadius = v end}):AddColorPicker("MBF_RadiusColor", {Default = Color3.fromRGB(255, 255, 255), Title = "Radius Color", Callback = function(c) L.MBF_RadiusColor = c end})
-MBF_Dep:AddSlider("MBF_Radius", {Text = "Radius", Default = 25, Min = 5, Max = 100, Rounding = 1, Compact = true, Callback = function(v) L.MBF_Radius = v end})
-local MBF_StatusLabel = MBF_Dep:AddLabel("Status: <font color=\"#FFFFFF\">Inactive</font>")
-MBF_StatusLabel.RichText = true
+UI_Elements.MBF_Dep = UI_Elements.Misc_Troll:AddDependencyBox(); UI_Elements.MBF_Dep:SetupDependencies({{UI_Elements.MBF_Toggle, true}})
+UI_Elements.MBF_Dep:AddToggle("MBF_ShowRadius", {Text = "Show Radius", Default = false, Callback = function(v) L.MBF_ShowRadius = v end}):AddColorPicker("MBF_RadiusColor", {Default = Color3.fromRGB(255, 255, 255), Title = "Radius Color", Callback = function(c) L.MBF_RadiusColor = c end})
+UI_Elements.MBF_Dep:AddSlider("MBF_Radius", {Text = "Radius", Default = 25, Min = 5, Max = 100, Rounding = 1, Compact = true, Callback = function(v) L.MBF_Radius = v end})
+UI_Elements.MBF_StatusLabel = UI_Elements.MBF_Dep:AddLabel("Status: <font color=\"#FFFFFF\">Inactive</font>")
+UI_Elements.MBF_StatusLabel.RichText = true
 
 local function updateMBFStatus(status, color)
     local hex = string.format("%02X%02X%02X", math.floor(color.R * 255), math.floor(color.G * 255), math.floor(color.B * 255))
-    MBF_StatusLabel:SetText(string.format("Status: <font color=\"#%s\">%s</font>", hex, status))
+    UI_Elements.MBF_StatusLabel:SetText(string.format("Status: <font color=\"#%s\">%s</font>", hex, status))
 end
-local LocalMods = Tabs.Misc:AddRightGroupbox("Local Mods")
+UI_Elements.LocalMods = Tabs.Misc:AddRightGroupbox("Local Mods")
 -- Fly
-local FlyToggle = LocalMods:AddToggle("FlyEnabled", {Text = "Fly", Default = false, Callback = function(v) L.FlyEnabled = v end})
-FlyToggle:AddKeyPicker("FlyKey", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Fly", NoUI = false})
-local FlyDep = LocalMods:AddDependencyBox(); FlyDep:SetupDependencies({{FlyToggle, true}})
-FlyDep:AddSlider("FlySpeed", {Text = "Fly Speed Amount", Default = 25, Min = 10, Max = 28, Rounding = 0, Compact = true, Callback = function(v) L.FlySpeed = v end})
+UI_Elements.FlyToggle = UI_Elements.LocalMods:AddToggle("FlyEnabled", {Text = "Fly", Default = false, Callback = function(v) L.FlyEnabled = v end})
+UI_Elements.FlyToggle:AddKeyPicker("FlyKey", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Fly", NoUI = false})
+UI_Elements.FlyDep = UI_Elements.LocalMods:AddDependencyBox(); UI_Elements.FlyDep:SetupDependencies({{UI_Elements.FlyToggle, true}})
+UI_Elements.FlyDep:AddSlider("FlySpeed", {Text = "Fly Speed Amount", Default = 25, Min = 10, Max = 28, Rounding = 0, Compact = true, Callback = function(v) L.FlySpeed = v end})
 -- Speed
-local SpeedToggle = LocalMods:AddToggle("SpeedEnabled", {Text = "Speed", Default = false, Callback = function(v) L.SpeedEnabled = v end})
-SpeedToggle:AddKeyPicker("SpeedKey", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Speed", NoUI = false})
-local SpeedDep = LocalMods:AddDependencyBox(); SpeedDep:SetupDependencies({{SpeedToggle, true}})
-SpeedDep:AddSlider("SpeedAmount", {Text = "Walkspeed Amount", Default = 25, Min = 16, Max = 28, Rounding = 0, Compact = true, Callback = function(v) L.SpeedAmount = v end})
+UI_Elements.SpeedToggle = UI_Elements.LocalMods:AddToggle("SpeedEnabled", {Text = "Speed", Default = false, Callback = function(v) L.SpeedEnabled = v end})
+UI_Elements.SpeedToggle:AddKeyPicker("SpeedKey", {Default = "None", SyncToggleState = true, Mode = "Toggle", Text = "Speed", NoUI = false})
+UI_Elements.SpeedDep = UI_Elements.LocalMods:AddDependencyBox(); UI_Elements.SpeedDep:SetupDependencies({{UI_Elements.SpeedToggle, true}})
+UI_Elements.SpeedDep:AddSlider("SpeedAmount", {Text = "Walkspeed Amount", Default = 25, Min = 16, Max = 28, Rounding = 0, Compact = true, Callback = function(v) L.SpeedAmount = v end})
 -- No Ragdoll
-LocalMods:AddToggle("NoRagdoll", {Text = "No Ragdoll", Default = false, Callback = function(v) 
+UI_Elements.LocalMods:AddToggle("NoRagdoll", {Text = "No Ragdoll", Default = false, Callback = function(v) 
     L.NoRagdoll = v 
     if v and Modules.plrCharacter then
         local _Ragdoll = Modules.plrCharacter.Ragdoll
@@ -1939,11 +1982,11 @@ LocalMods:AddToggle("NoRagdoll", {Text = "No Ragdoll", Default = false, Callback
     end
 end})
 -- No Jump Delay
-LocalMods:AddToggle("NoJumpDelay", {Text = "No Jump Delay", Default = false, Callback = function(v) L.NoJumpDelay = v end})
+UI_Elements.LocalMods:AddToggle("NoJumpDelay", {Text = "No Jump Delay", Default = false, Callback = function(v) L.NoJumpDelay = v end})
 -- No Fall Damage
-LocalMods:AddToggle("NoFallDamage", {Text = "No Fall Damage", Default = false, Callback = function(v) L.NoFallDamage = v end})
+UI_Elements.LocalMods:AddToggle("NoFallDamage", {Text = "No Fall Damage", Default = false, Callback = function(v) L.NoFallDamage = v end})
 -- Auto Break Free
-LocalMods:AddToggle("AutoBreakFree", {Text = "Auto Break Free", Default = false, Callback = function(v) 
+UI_Elements.LocalMods:AddToggle("AutoBreakFree", {Text = "Auto Break Free", Default = false, Callback = function(v) 
     L.AutoBreakFree = v 
     if v and Modules.plrCharacter then
         local _BreakFreePerc = Modules.plrCharacter.BreakFreePerc
@@ -1965,7 +2008,7 @@ LocalMods:AddToggle("AutoBreakFree", {Text = "Auto Break Free", Default = false,
     end
 end})
 -- Auto Get Up
-LocalMods:AddToggle("AutoGetUp", {Text = "Auto Get Up", Default = false, Callback = function(v) 
+UI_Elements.LocalMods:AddToggle("AutoGetUp", {Text = "Auto Get Up", Default = false, Callback = function(v) 
     L.AutoGetUp = v 
     if v then
         task.spawn(function()
@@ -1984,7 +2027,7 @@ LocalMods:AddToggle("AutoGetUp", {Text = "Auto Get Up", Default = false, Callbac
     end
 end})
 -- Infinite Stamina
-LocalMods:AddToggle("InfiniteStamina", {Text = "Infinite Stamina", Default = false, Callback = function(v) 
+UI_Elements.LocalMods:AddToggle("InfiniteStamina", {Text = "Infinite Stamina", Default = false, Callback = function(v) 
     L.InfStamina = v
     if v and Modules.repState then
         local _repState = Modules.repState
@@ -2001,7 +2044,7 @@ LocalMods:AddToggle("InfiniteStamina", {Text = "Infinite Stamina", Default = fal
     end
 end})
 -- Roll Speed Modifier
-local RollSpeedToggle = LocalMods:AddToggle("RollSpeedModifier", {Text = "Roll Speed Modifier", Default = false, Callback = function(v)
+UI_Elements.RollSpeedToggle = UI_Elements.LocalMods:AddToggle("RollSpeedModifier", {Text = "Roll Speed Modifier", Default = false, Callback = function(v)
     L.RollSpeedModifier = v
     local ok, p2To = pcall(function()
         return game:GetService("ReplicatedStorage").Params.Character.Roll.Phase2.To
@@ -2015,8 +2058,8 @@ local RollSpeedToggle = LocalMods:AddToggle("RollSpeedModifier", {Text = "Roll S
         end
     end
 end})
-local RollSpeedDep = LocalMods:AddDependencyBox(); RollSpeedDep:SetupDependencies({{RollSpeedToggle, true}})
-RollSpeedDep:AddSlider("RollSpeedAmount", {Text = "Roll Speed", Default = 1.25, Min = 0.5, Max = 5, Rounding = 2, Suffix = "x", Compact = true, Callback = function(v)
+UI_Elements.RollSpeedDep = UI_Elements.LocalMods:AddDependencyBox(); UI_Elements.RollSpeedDep:SetupDependencies({{UI_Elements.RollSpeedToggle, true}})
+UI_Elements.RollSpeedDep:AddSlider("RollSpeedAmount", {Text = "Roll Speed", Default = 1.25, Min = 0.5, Max = 5, Rounding = 2, Suffix = "x", Compact = true, Callback = function(v)
     L.RollSpeedAmount = v
     if not L.RollSpeedModifier then return end
     local ok, p2To = pcall(function()
@@ -2053,6 +2096,30 @@ local function getHlColor(baseColor, hlTrans, actColor, duelTrans, duelColor, pr
 end
 local function onRenderSteppedESP(dt, cP, n, mP, camCF)
     local duelOpponent = getActiveDuelOpponent()
+    
+    -- Optimized Bounty Cache (No FPS Drop)
+    if (n - L.lastBountyUpdate) > 1.5 then
+        L.lastBountyUpdate = n
+        local bCache = {}
+        local lb = LP.PlayerGui:FindFirstChild("Leaderboard")
+        local main = lb and lb:FindFirstChild("Container")
+        main = main and main:FindFirstChild("Body")
+        main = main and main:FindFirstChild("ScrollingMain")
+        if main then
+            for _, tmpl in ipairs(main:GetChildren()) do
+                if tmpl.Name == "UserTemplate" then
+                    local btn = tmpl:FindFirstChild("Button")
+                    local uName = btn and btn:FindFirstChild("UserName")
+                    local status = btn and btn:FindFirstChild("Status")
+                    if uName and status and status.Text and status.Text ~= "" and status.Text ~= "$0" then
+                        bCache[uName.Text] = status.Text
+                    end
+                end
+            end
+        end
+        L.BountyCache = bCache
+    end
+
     for m, data in pairs(espCache) do
         if not m or not m.Parent then hAll(m) continue end
         local prefix = data.type == "NPCs" and "NPC_" or (data.type == "Animals" and "Animal_" or "")
@@ -2111,7 +2178,9 @@ local function onRenderSteppedESP(dt, cP, n, mP, camCF)
         local h, w = math.floor(math.abs(tP.Y - bP.Y)), math.floor(math.abs(tP.Y - bP.Y) * 0.55)
         local x, y = math.floor(tP.X - w / 2), math.floor(tP.Y)
         local tN, tWp, tD, bx, ou, fl, hB, hO, hT, aCList, hSolid = L.ND[m], L.WD[m], L.DD[m], L.BD[m], L.BOD[m], L.BFD[m], L.HD[m], L.HOD[m], L.HTD[m], L.AC[m], L.HSD[m]
+        local tBty = L.BtyD and L.BtyD[m]
         local dE, wE, nE, bE, hE, cE, skE = L[prefix .. "DE"], L[prefix .. "WE"], L[prefix .. "NE"], L[prefix .. "BE"], L[prefix .. "HE"], L[prefix .. "CE"], L[prefix .. "SKE"]
+        local fs = math.floor(L[prefix .. "FS"] or 13)
         if data.type == "Animals" and not data.isLegendary then
             if not data.animalName then data.animalName = m.Name:lower() end
             local maxH = data.maxH or 100
@@ -2141,8 +2210,7 @@ local function onRenderSteppedESP(dt, cP, n, mP, camCF)
                     data.lastCase = L.FCase 
                 end 
                 local text = data.cachedName
-                local fs = math.floor(L[prefix .. "FS"] or 13)
-                cPropV2(tN, "Position", x + w / 2, y - 15) cProp(tN, "Text", text) cProp(tN, "Color", nameColor) cProp(tN, "Transparency", fA) cProp(tN, "Visible", true) cProp(tN, "Size", fs) cProp(tN, "Center", true)
+                cPropV2(tN, "Position", x + w / 2, y - 15) cProp(tN, "Text", text) cProp(tN, "Color", nameColor) cProp(tN, "Transparency", fA) cProp(tN, "Visible", true) cProp(tN, "Size", fs) cProp(tN, "Font", L.Font) cProp(tN, "Center", true)
                 if data.type == "Animals" and hT and hE then
                     local curH = (data.hs or 1) * (data.maxH or 100)
                     local hText = " [ " .. math.floor(curH) .. "/" .. math.floor(data.maxH or 100) .. " ]"
@@ -2154,23 +2222,47 @@ local function onRenderSteppedESP(dt, cP, n, mP, camCF)
                 elseif hT and data.type == "Animals" then cProp(hT, "Visible", false) end
             else cProp(tN, "Visible", false) if hT and data.type == "Animals" then cProp(hT, "Visible", false) end end 
         end
-        if tWp then if wE and L[prefix .. "Master"] then cPropV2(tWp, "Position", x + w / 2, y + h) cProp(tWp, "Text", aFC(data.wN or "None")) cProp(tWp, "Color", getHlColor(L[prefix .. "WTC"], hlTrans, actColor, duelTrans, L.OverwriteDuelColor, data.prioTrans, L.PCOC, data.friendTrans, L.FCOC)) cProp(tWp, "Transparency", fA) cProp(tWp, "Visible", true) else cProp(tWp, "Visible", false) end end
+        if tWp then if wE and L[prefix .. "Master"] then cPropV2(tWp, "Position", x + w / 2, y + h) cProp(tWp, "Text", aFC(data.wN or "None")) cProp(tWp, "Color", getHlColor(L[prefix .. "WTC"], hlTrans, actColor, duelTrans, L.OverwriteDuelColor, data.prioTrans, L.PCOC, data.friendTrans, L.FCOC)) cProp(tWp, "Transparency", fA) cProp(tWp, "Size", fs) cProp(tWp, "Font", L.Font) cProp(tWp, "Visible", true) else cProp(tWp, "Visible", false) end end
         if tD then 
             if dE and L[prefix .. "Master"] then 
                 local dDisp = math.floor(L[prefix .. "DistMode"] == "Meters" and d * 0.28 or d) 
                 local dSuffix = L[prefix .. "DistMode"] == "Meters" and "m" or "s" 
-                local text = dDisp .. dSuffix
-                local fs = math.floor(L[prefix .. "FS"] or 13)
+                local text = aFC(dDisp .. dSuffix)
                 local posX, posY = x + w / 2, y + h + (wE and fs or 0)
                 if data.type == "Animals" then
-                    text = "[ " .. dDisp .. dSuffix .. " ]"
+                    text = aFC("[ " .. dDisp .. dSuffix .. " ]")
                     local nBounds, hBounds = tN.TextBounds, (hT and hT.TextBounds or {X = 0})
                     local totalW = nBounds.X + 4 + (hE and hBounds.X or 0)
                     posX = math.floor((x + w / 2) - (nBounds.X / 2) + (totalW / 2))
                     posY = math.floor(y - 3)
                 end
-                cPropV2(tD, "Position", posX, posY) cProp(tD, "Text", text) cProp(tD, "Color", distColor) cProp(tD, "Transparency", fA) cProp(tD, "Visible", true) cProp(tD, "Size", fs) cProp(tD, "Center", true)
+                cPropV2(tD, "Position", posX, posY) cProp(tD, "Text", text) cProp(tD, "Color", distColor) cProp(tD, "Transparency", fA) cProp(tD, "Visible", true) cProp(tD, "Size", fs) cProp(tD, "Font", L.Font) cProp(tD, "Center", true)
             else cProp(tD, "Visible", false) end 
+        end
+        if tBty then
+            if L.BountyE and L[prefix .. "Master"] and data.type == "Players" then
+                local head = m:FindFirstChild("Head")
+                local ps = head and head:FindFirstChild("PlayerStatus")
+                local un = ps and ps:FindFirstChild("Username")
+                local targetUser = un and un.Text or m.Name
+                local btyStr = L.BountyCache and L.BountyCache[targetUser]
+                
+                if btyStr then
+                    local bColor = getHlColor(L.BountyTC or Color3.new(1, 1, 1), hlTrans, actColor, duelTrans, L.OverwriteDuelColor, data.prioTrans, L.PCOC, data.friendTrans, L.FCOC)
+                    cPropV2(tBty, "Position", x + w + 5, y) -- Top right edge, below the Name level
+                    cProp(tBty, "Text", aFC(btyStr))
+                    cProp(tBty, "Color", bColor)
+                    cProp(tBty, "Transparency", fA)
+                    cProp(tBty, "Size", fs)
+                    cProp(tBty, "Font", L.Font)
+                    cProp(tBty, "Center", false)
+                    cProp(tBty, "Visible", true)
+                else
+                    cProp(tBty, "Visible", false)
+                end
+            else
+                cProp(tBty, "Visible", false)
+            end
         end
         if hT and data.type ~= "Animals" then
             cProp(hT, "Visible", false)
@@ -2210,7 +2302,7 @@ local function onRenderSteppedESP(dt, cP, n, mP, camCF)
                 end
                 if hT and L[prefix .. "HTE"] then
                     local fP = L.HTFC[m] or 0 if vs < 0.99 and not data.removed then fP = math.min(fP + dt / 0.15, 1) else fP = math.max(fP - dt / 0.15, 0) end L.HTFC[m] = fP
-                    if fP > 0.01 then cProp(hT, "Text", tostring(math.floor(vs * 100))) cPropV2(hT, "Position", x - 15, y + h - bh - 7) cProp(hT, "Color", getHlColor(L[prefix .. "HTC"], hlTrans, actColor, duelTrans, L.OverwriteDuelColor, data.prioTrans, L.PCOC, data.friendTrans, L.FCOC)) cProp(hT, "Transparency", fA * fP) cProp(hT, "Visible", true) else cProp(hT, "Visible", false) end
+                    if fP > 0.01 then cProp(hT, "Text", tostring(math.floor(vs * 100))) cPropV2(hT, "Position", x - 15, y + h - bh - 7) cProp(hT, "Color", getHlColor(L[prefix .. "HTC"], hlTrans, actColor, duelTrans, L.OverwriteDuelColor, data.prioTrans, L.PCOC, data.friendTrans, L.FCOC)) cProp(hT, "Transparency", fA * fP) cProp(hT, "Size", fs) cProp(hT, "Font", L.Font) cProp(hT, "Visible", true) else cProp(hT, "Visible", false) end
                 elseif hT then cProp(hT, "Visible", false) end
             else cProp(hO, "Visible", false) for i = 1, 65 do if hB[i] then hB[i].Visible = false end end if hT then cProp(hT, "Visible", false) end end
         elseif hB and hO then cProp(hB, "Visible", false) cProp(hO, "Visible", false) end
@@ -2644,7 +2736,10 @@ L.Connections.MBF = RS.Heartbeat:Connect(function(dt)
         return
     end
 
-    -- Target Acquisition (Persistent targeting)
+    -- Cleanup any legacy constraints
+    if ActiveMBF_Bag:FindFirstChild("ROXY_MBF_BP") then ActiveMBF_Bag.ROXY_MBF_BP:Destroy() end
+    if ActiveMBF_Bag:FindFirstChild("ROXY_MBF_BAV") then ActiveMBF_Bag.ROXY_MBF_BAV:Destroy() end
+
     if MBF_Target then
         local targetHum = MBF_Target.Parent:FindFirstChild("Humanoid")
         if not MBF_Target.Parent or (targetHum and targetHum.Health <= 0) or (MBF_Target.Position - hrp.Position).Magnitude > L.MBF_Radius then
@@ -2664,11 +2759,11 @@ L.Connections.MBF = RS.Heartbeat:Connect(function(dt)
                     local hum = charModel:FindFirstChild("Humanoid")
                     local targetHrp = charModel:FindFirstChild("HumanoidRootPart")
                     
-                    if hum and hum.Health > 0 and targetHrp then
+                    if hum and hum.Health > 0 and targetHrp and isRagdolled(charModel) then
                         local dist = (targetHrp.Position - hrp.Position).Magnitude
                         if dist < L.MBF_Radius then
                             MBF_Target = targetHrp
-                            break -- Lock onto the first valid target in range
+                            break
                         end
                     end
                 end
@@ -2679,30 +2774,30 @@ L.Connections.MBF = RS.Heartbeat:Connect(function(dt)
     if MBF_Target then
         if updateMBFStatus then updateMBFStatus("Flinging: " .. MBF_Target.Parent.Name, Color3.fromRGB(255, 50, 50)) end
         
-        local targetPos = MBF_Target.Position
-        local dist = (targetPos - ActiveMBF_Bag.Position).Magnitude
-        
-        if dist > 4 then
-            -- Hybrid Interception (CFrame for smoothness + Velocity for server replication)
-            ActiveMBF_Bag.CFrame = ActiveMBF_Bag.CFrame:Lerp(CFrame.new(targetPos), 0.2)
-            ActiveMBF_Bag.AssemblyLinearVelocity = (targetPos - ActiveMBF_Bag.Position) * 30
-        else
-            -- High-Intensity Torso Glitch (Fling Protocol)
-            local glitch = Vector3.new(math.random(-10, 10)/20, math.random(-10, 10)/20, math.random(-10, 10)/20)
-            ActiveMBF_Bag.CFrame = MBF_Target.CFrame * CFrame.new(glitch) * CFrame.Angles(math.rad(math.random(0, 360)), math.rad(math.random(0, 360)), math.rad(math.random(0, 360)))
-            
-            ActiveMBF_Bag.AssemblyAngularVelocity = Vector3.new(30000, 30000, 30000)
-            ActiveMBF_Bag.AssemblyLinearVelocity = Vector3.new(0, 5000, 0)
-        end
+        -- Lock directly into the target's HRP and apply massive rotation for optimized, lag-free fling
+        ActiveMBF_Bag.CFrame = MBF_Target.CFrame
+        ActiveMBF_Bag.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        ActiveMBF_Bag.AssemblyAngularVelocity = Vector3.new(20000, 20000, 20000)
     else
         if updateMBFStatus then updateMBFStatus("Bag Hooked | Orbiting", Color3.fromRGB(50, 255, 50)) end
-        -- Hybrid Orbiting (CFrame for perfect visual + Velocity for server replication)
-        MBF_Angle = MBF_Angle + dt * 8
-        local orbitPos = hrp.Position + Vector3.new(math.cos(MBF_Angle) * 6, 1.5, math.sin(MBF_Angle) * 6)
         
-        ActiveMBF_Bag.CFrame = ActiveMBF_Bag.CFrame:Lerp(CFrame.new(orbitPos), 0.2)
-        ActiveMBF_Bag.AssemblyLinearVelocity = (orbitPos - ActiveMBF_Bag.Position) * 30
-        ActiveMBF_Bag.AssemblyAngularVelocity = Vector3.zero
+        MBF_Angle = MBF_Angle + dt * 8
+        local orbitOffset = Vector3.new(math.cos(MBF_Angle) * 6, 1.5, math.sin(MBF_Angle) * 6)
+        local orbitPos = hrp.Position + orbitOffset
+        
+        local params = RaycastParams.new()
+        params.FilterDescendantsInstances = {LP.Character, WS:FindFirstChild("WORKSPACE_Entities"), ActiveMBF_Bag}
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        
+        local ray = WS:Raycast(hrp.Position, orbitOffset, params)
+        if ray then
+            orbitPos = ray.Position - (orbitOffset.Unit * 1.5)
+        end
+        
+        -- Always visually update for the user, apply velocity for server sync
+        ActiveMBF_Bag.CFrame = ActiveMBF_Bag.CFrame:Lerp(CFrame.new(orbitPos), 0.4)
+        ActiveMBF_Bag.AssemblyLinearVelocity = (orbitPos - ActiveMBF_Bag.Position) * 40
+        ActiveMBF_Bag.AssemblyAngularVelocity = Vector3.new(math.random(-50, 50), math.random(-50, 50), math.random(-50, 50))
     end
 end)
 
@@ -3715,4 +3810,35 @@ local function renderTargetInfo(target)
     if onScreen then
     end
 end
+local function handleNotification(child)
+    if not L.HideProjErrors then return end
+    
+    local container = child:WaitForChild("Container", 2)
+    local eventName = container and container:WaitForChild("EventName", 2)
+    local textLabel = eventName and eventName:WaitForChild("TextLabel", 2)
+    
+    if textLabel then
+        local text = textLabel.Text
+        if text:find("PROJ_ERROR_") or text:find("ITEM_ERROR_") then
+            child.Visible = false
+            if L.ErrorHandlingMode == "Notify" then
+                local shortName = text:gsub("PROJ_ERROR_", ""):gsub("ITEM_ERROR_", "")
+                Library:Notify("Shot Missed: " .. shortName, 5)
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    local notifications = LP.PlayerGui:WaitForChild("Notifications", 10)
+    if notifications then
+        L.Connections.NotificationsAdded = notifications.ChildAdded:Connect(function(child)
+            task.spawn(handleNotification, child)
+        end)
+        for _, child in ipairs(notifications:GetChildren()) do
+            task.spawn(handleNotification, child)
+        end
+    end
+end)
+
 return { Library = Library, ThemeManager = ThemeManager, SaveManager = SaveManager, Options = Options, Toggles = Toggles, Window = Window, Tabs = Tabs }
